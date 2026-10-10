@@ -1,4 +1,4 @@
-"""Nạp rules.yaml & lọc theo mức độ / OS."""
+"""Load rules.yaml and filter by level / OS."""
 import glob
 import os
 import sys
@@ -20,19 +20,19 @@ def load_rules(path: str = RULES_PATH) -> list:
 
 
 def expand_path(raw: str) -> str:
-    # Windows: %TEMP% ; Linux/macOS: ~ và $HOME
+    # Windows: %TEMP% ; Linux/macOS: ~ and $HOME
     return os.path.expandvars(os.path.expanduser(raw))
 
 
 def rules_for(level: int, plat: str = None) -> list:
-    """Các rule thuộc mức <= level và đúng OS hiện tại."""
+    """Rules at level <= given level for the current OS."""
     plat = plat or platform_name()
     return [r for r in load_rules()
             if r.get("level", 1) <= level and plat in r.get("os", [])]
 
 
 def resolve_paths(rule: dict) -> list:
-    """Giải nén paths của rule (hỗ trợ glob như Firefox Profiles/*/cache2)."""
+    """Expand a rule's paths (supports globs like Firefox Profiles/*/cache2)."""
     out = []
     for raw in rule.get("paths", []):
         for p in glob.glob(expand_path(raw)):

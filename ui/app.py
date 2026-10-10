@@ -1,9 +1,9 @@
 """CleanBoost PRO — GUI (CustomTkinter).
 
-Layout: sidebar điều hướng + topbar + 4 trang + status bar.
-Trang Dọn rác: xem chi tiết file trước khi xóa, confirm có liệt kê ảnh hưởng,
-nút Xóa giải phóng dung lượng THẬT (đo trực tiếp từ ổ đĩa).
-Nút "?" góc phải mở sách hướng dẫn sử dụng.
+Layout: left sidebar + topbar + 4 pages + status bar.
+Every long task runs in a background thread with its buttons disabled
+(no double-click hangs). All popups are modal and centered on the main
+window. Light/dark theme with a toggle. UI language: English.
 """
 import os
 import sys
@@ -65,7 +65,7 @@ def _load_theme():
 
 
 def set_theme(mode):
-    """Đổi theme và lưu lại. Các hằng C_* được gán lại."""
+    """Switch theme and persist it. Reassigns the C_* globals."""
     global C_BG, C_SIDEBAR, C_CARD, C_CARD2, C_LINE, C_TXT, C_MUT
     t = THEMES[mode]
     C_BG, C_SIDEBAR, C_CARD = t["BG"], t["SIDEBAR"], t["CARD"]
@@ -83,7 +83,7 @@ ctk.set_default_color_theme("blue")
 
 
 def _pick_font(candidates):
-    """Chọn font đầu tiên có trên máy (đảm bảo hiển thị tiếng Việt)."""
+    """Pick the first font available on this machine."""
     try:
         import tkinter.font as tkfont
         avail = set(tkfont.families())
@@ -109,40 +109,10 @@ def _fmt_gb(n):
     return f"{n / GB:.2f} GB"
 
 
-# ------------------------- widgets -------------------------
-
-class RingGauge(tk.Canvas):
-    """Đồng hồ tròn hiển thị %."""
-
-    def __init__(self, parent, title, size=168):
-        super().__init__(parent, width=size, height=size, bg=C_CARD,
-                         highlightthickness=0)
-        self._s = size
-        self._title = title
-        self.set(0, "")
-
-    def set(self, pct, subtitle=""):
-        self.delete("all")
-        s, cx, cy, r = self._s, self._s / 2, self._s / 2, self._s / 2 - 20
-        pct = max(0, min(100, pct))
-        self.create_arc(cx - r, cy - r, cx + r, cy + r, start=90, extent=359.9,
-                        style="arc", outline=C_LINE, width=13)
-        color = C_ACC if pct < 70 else (C_YLW if pct < 90 else C_RED)
-        if pct > 0:
-            self.create_arc(cx - r, cy - r, cx + r, cy + r, start=90,
-                            extent=-359.9 * pct / 100, style="arc",
-                            outline=color, width=13)
-        self.create_text(cx, cy - 10, text=f"{pct:.0f}%",
-                         fill=C_TXT, font=(FONT, 24, "bold"))
-        self.create_text(cx, cy + 18, text=self._title,
-                         fill=C_MUT, font=(FONT, 12))
-        if subtitle:
-            self.create_text(cx, cy + 38, text=subtitle,
-                             fill=C_MUT, font=(FONT, 10))
-
+# ------------------------- modal helpers -------------------------
 
 def _center_on(win, parent):
-    """Căn Toplevel vào giữa cửa sổ cha."""
+    """Center a Toplevel on its parent window."""
     try:
         parent.update_idletasks()
         win.update_idletasks()
@@ -161,9 +131,9 @@ def _center_on(win, parent):
 
 
 def _make_modal(win, parent):
-    """Biến Toplevel thành popup modal căn giữa màn hình chính.
+    """Make a Toplevel a modal popup centered on the main window.
 
-    Phải đóng popup mới thao tác được màn hình chính.
+    The main window cannot be used until the popup is closed.
     """
     try:
         win.transient(parent)
@@ -192,15 +162,47 @@ def _dark_tree(parent):
     return ttk.Treeview(parent)
 
 
+# ------------------------- widgets -------------------------
+
+class RingGauge(tk.Canvas):
+    """Circular gauge showing a percentage."""
+
+    def __init__(self, parent, title, size=168):
+        super().__init__(parent, width=size, height=size, bg=C_CARD,
+                         highlightthickness=0)
+        self._s = size
+        self._title = title
+        self.set(0, "")
+
+    def set(self, pct, subtitle=""):
+        self.delete("all")
+        s, cx, cy, r = self._s, self._s / 2, self._s / 2, self._s / 2 - 20
+        pct = max(0, min(100, pct))
+        self.create_arc(cx - r, cy - r, cx + r, cy + r, start=90, extent=359.9,
+                        style="arc", outline=C_LINE, width=13)
+        color = C_ACC if pct < 70 else (C_YLW if pct < 90 else C_RED)
+        if pct > 0:
+            self.create_arc(cx - r, cy - r, cx + r, cy + r, start=90,
+                            extent=-359.9 * pct / 100, style="arc",
+                            outline=color, width=13)
+        self.create_text(cx, cy - 10, text=f"{pct:.0f}%",
+                         fill=C_TXT, font=(FONT, 24, "bold"))
+        self.create_text(cx, cy + 18, text=self._title,
+                         fill=C_MUT, font=(FONT, 12))
+        if subtitle:
+            self.create_text(cx, cy + 38, text=subtitle,
+                             fill=C_MUT, font=(FONT, 10))
+
+
 # ------------------------- dialogs -------------------------
 
 class DetailDialog(ctk.CTkToplevel):
-    """Xem chi tiết file sẽ bị xóa của 1 nhóm (trước khi xóa)."""
+    """Show the actual files a group will delete (before deleting)."""
 
     def __init__(self, master, res):
         super().__init__(master)
         rule = res["rule"]
-        self.title(f"Chi tiết — {rule['name']}")
+        self.title(f"Details — {rule['name']}")
         self.geometry("760x520")
         _make_modal(self, master)
         self.res = res
@@ -211,21 +213,21 @@ class DetailDialog(ctk.CTkToplevel):
                      wraplength=700, justify="left").pack(anchor="w")
         info = rule.get("impact", "")
         if rule.get("warning"):
-            info = f"⚠️ {rule['warning']}\n{info}"
+            info = f"WARNING: {rule['warning']}\n{info}"
         if rule.get("note"):
-            info += f"\nℹ️ {rule['note']}"
+            info += f"\nNote: {rule['note']}"
         ctk.CTkLabel(head, text=info.strip(), text_color=C_MUT,
                      font=(FONT, 12), wraplength=700,
                      justify="left").pack(anchor="w", pady=(4, 0))
 
-        self.status = ctk.CTkLabel(self, text="Đang tính dung lượng từng file...",
+        self.status = ctk.CTkLabel(self, text="Calculating file sizes...",
                                    text_color=C_MUT)
         self.status.pack(padx=16, pady=4, anchor="w")
 
         self.tree = _dark_tree(self)
         self.tree["columns"] = ("size",)
-        self.tree.heading("#0", text="File / thư mục")
-        self.tree.heading("size", text="Dung lượng")
+        self.tree.heading("#0", text="File / folder")
+        self.tree.heading("size", text="Size")
         self.tree.column("#0", width=560)
         self.tree.column("size", width=120)
         self.tree.pack(fill="both", expand=True, padx=16, pady=6)
@@ -234,19 +236,18 @@ class DetailDialog(ctk.CTkToplevel):
         foot.pack(fill="x", padx=16, pady=(0, 14))
         self.foot_lbl = ctk.CTkLabel(foot, text="", text_color=C_MUT)
         self.foot_lbl.pack(side="left")
-        ctk.CTkButton(foot, text="Đóng", width=100,
+        ctk.CTkButton(foot, text="Close", width=100,
                       command=self.destroy).pack(side="right")
         _bg(self._load)
 
     def _load(self):
-        res, rule = self.res, self.res["rule"]
+        res = self.res
         rows = []
         if res.get("orphans"):
             for o in res["orphans"]:
                 rows.append((f"[{o['confidence']}] {o['path']}", o["size"]))
         else:
             paths = res.get("paths") or []
-            # tính size cho tối đa 5000 file đầu để dialog không treo
             for fp in paths[:5000]:
                 try:
                     rows.append((fp, os.path.getsize(fp)))
@@ -264,32 +265,32 @@ class DetailDialog(ctk.CTkToplevel):
                              values=(_fmt_gb(s),), tags=(tag,))
         self.tree.tag_configure("big", foreground=C_YLW)
         self.status.pack_forget()
-        extra = f" (trong {min(total_n, 5000)} mục đã duyệt)" if total_n > len(show) else ""
+        extra = f" (of {min(total_n, 5000)} scanned)" if total_n > len(show) else ""
         self.foot_lbl.configure(
-            text=f"Hiển thị {len(show)}/{total_n} mục lớn nhất{extra} • "
-                 f"Tổng nhóm: {_fmt_gb(self.res['size'])}")
+            text=f"Showing {len(show)}/{total_n} largest items{extra} — "
+                 f"group total: {_fmt_gb(self.res['size'])}")
 
 
 class ConfirmCleanDialog(ctk.CTkToplevel):
-    """Hộp xác nhận xóa: liệt kê nhóm + ảnh hưởng + cảnh báo đỏ."""
+    """Confirm deletion: lists groups + impact + red warnings."""
 
     def __init__(self, master, items, permanent):
-        """items: list of (rule, size). permanent True = xóa hẳn."""
+        """items: list of (rule, size). permanent True = delete forever."""
         super().__init__(master)
         self.result = False
         total = sum(s for _, s in items)
-        self.title("Xác nhận dọn dẹp")
+        self.title("Confirm cleanup")
         self.geometry("620x480")
         _make_modal(self, master)
 
         ctk.CTkLabel(self,
-                     text="🗑 Xóa vĩnh viễn" if permanent else "📦 Chuyển vào khu cách ly",
+                     text="Delete permanently" if permanent else "Move to quarantine",
                      font=(FONT, 17, "bold"),
                      text_color=C_RED if permanent else C_YLW).pack(pady=(16, 4))
-        ctk.CTkLabel(self, text=f"Tổng: {_fmt_gb(total)} — {len(items)} nhóm",
+        ctk.CTkLabel(self, text=f"Total: {_fmt_gb(total)} — {len(items)} groups",
                      font=(FONT, 13, "bold"), text_color=C_ACC).pack()
 
-        box = ctk.CTkScrollableFrame(self, label_text="Các nhóm sẽ dọn")
+        box = ctk.CTkScrollableFrame(self, label_text="Groups to clean")
         box.pack(fill="both", expand=True, padx=16, pady=10)
         for rule, size in items:
             f = ctk.CTkFrame(box, fg_color=C_CARD2)
@@ -304,22 +305,22 @@ class ConfirmCleanDialog(ctk.CTkToplevel):
                          font=(FONT, 11), wraplength=540,
                          justify="left").pack(anchor="w", padx=10, pady=(2, 2))
             if rule.get("warning"):
-                ctk.CTkLabel(f, text=f"⚠️ {rule['warning']}",
+                ctk.CTkLabel(f, text=f"WARNING: {rule['warning']}",
                              text_color=C_RED, font=(FONT, 11, "bold"),
                              wraplength=540, justify="left").pack(anchor="w", padx=10, pady=(0, 8))
 
-        note = ("File bị xóa KHÔNG khôi phục được." if permanent
-                else "File được chuyển vào khu cách ly (giữ 14 ngày, khôi phục "
-                     "được) — LƯU Ý: vẫn chiếm dung lượng ổ đĩa cho đến khi "
-                     "bạn xóa vĩnh viễn trong tab Khu cách ly.")
+        note = ("Deleted files CANNOT be recovered." if permanent
+                else "Files move to quarantine (kept 14 days, restorable) — "
+                     "NOTE: they still occupy disk space until you delete them "
+                     "permanently from the Quarantine tab.")
         ctk.CTkLabel(self, text=note, text_color=C_MUT, font=(FONT, 11),
                      wraplength=560, justify="left").pack(padx=16, pady=4)
 
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(4, 16))
-        ctk.CTkButton(row, text="Hủy", fg_color=C_CARD2,
+        ctk.CTkButton(row, text="Cancel", fg_color=C_CARD2,
                       command=self._no).pack(side="right", padx=6)
-        ctk.CTkButton(row, text="🗑 Xóa vĩnh viễn" if permanent else "📦 Cách ly",
+        ctk.CTkButton(row, text="Delete permanently" if permanent else "Quarantine",
                       fg_color="#b91c1c" if permanent else "#b45309",
                       hover_color="#991b1b" if permanent else "#92400e",
                       command=self._yes).pack(side="right", padx=6)
@@ -333,7 +334,7 @@ class ConfirmCleanDialog(ctk.CTkToplevel):
 
 
 class ResultDialog(ctk.CTkToplevel):
-    """Hiện kết quả dọn (dùng font mono để dễ đọc)."""
+    """Show cleanup results in monospace text."""
 
     def __init__(self, master, title, text):
         super().__init__(master)
@@ -345,21 +346,21 @@ class ResultDialog(ctk.CTkToplevel):
         box.pack(fill="both", expand=True, padx=16, pady=6)
         box.insert("1.0", text)
         box.configure(state="disabled")
-        ctk.CTkButton(self, text="Đóng", width=120,
+        ctk.CTkButton(self, text="Close", width=120,
                       command=self.destroy).pack(pady=(0, 14))
 
 
 class EmergencyDialog(ctk.CTkToplevel):
-    """Chọn app để kill khẩn cấp."""
+    """Pick apps to kill for emergency RAM release."""
 
     def __init__(self, master, cands, on_done):
         super().__init__(master)
-        self.title("Giải phóng RAM khẩn cấp")
+        self.title("Emergency RAM release")
         self.geometry("540x460")
         _make_modal(self, master)
         self._on_done = on_done
         self._vars = {}
-        ctk.CTkLabel(self, text="Chọn app để tắt (đã loại trừ process hệ thống):",
+        ctk.CTkLabel(self, text="Select apps to close (system processes excluded):",
                      font=(FONT, 13, "bold")).pack(padx=14, pady=(14, 6))
         frm = ctk.CTkScrollableFrame(self)
         frm.pack(fill="both", expand=True, padx=14, pady=6)
@@ -371,9 +372,9 @@ class EmergencyDialog(ctk.CTkToplevel):
             self._vars[r["pid"]] = var
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(fill="x", padx=14, pady=12)
-        ctk.CTkButton(row, text="⚡ Tắt đã chọn", fg_color="#b91c1c",
+        ctk.CTkButton(row, text="Close selected", fg_color="#b91c1c",
                       hover_color="#991b1b", command=self._kill).pack(side="left", padx=4)
-        ctk.CTkButton(row, text="Đóng", fg_color=C_CARD2,
+        ctk.CTkButton(row, text="Cancel", fg_color=C_CARD2,
                       command=lambda: self._close(0)).pack(side="left", padx=4)
 
     def _kill(self):
@@ -390,14 +391,14 @@ class EmergencyDialog(ctk.CTkToplevel):
 
 
 class HelpWindow(ctk.CTkToplevel):
-    """Cửa sổ hướng dẫn sử dụng (đọc HuongDanSuDung.md)."""
+    """User manual viewer (reads USER_MANUAL.md)."""
 
     def __init__(self, master):
         super().__init__(master)
-        self.title("Hướng dẫn sử dụng — CleanBoost")
+        self.title("User Manual — CleanBoost")
         self.geometry("780x600")
         _make_modal(self, master)
-        ctk.CTkLabel(self, text="📖 Hướng dẫn sử dụng",
+        ctk.CTkLabel(self, text="User Manual",
                      font=(FONT, 17, "bold")).pack(pady=(14, 6))
         self.box = ctk.CTkTextbox(self, wrap="word", font=(FONT, 13))
         self.box.pack(fill="both", expand=True, padx=16, pady=6)
@@ -412,18 +413,21 @@ class HelpWindow(ctk.CTkToplevel):
         tb.tag_config("mut", foreground=C_MUT)
         self._render()
         self.box.configure(state="disabled")
-        ctk.CTkButton(self, text="Đóng", width=120,
+        ctk.CTkButton(self, text="Close", width=120,
                       command=self.destroy).pack(pady=(0, 14))
 
     def _render(self):
         import re
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        p = os.path.join(root, "HuongDanSuDung.md")
+        for name in ("USER_MANUAL.md", "HuongDanSuDung.md"):
+            p = os.path.join(root, name)
+            if os.path.exists(p):
+                break
         try:
             with open(p, encoding="utf-8") as f:
                 lines = f.read().splitlines()
         except OSError:
-            lines = ["Không tìm thấy file HuongDanSuDung.md"]
+            lines = ["User manual not found."]
         tb = self.box._textbox
         in_code = False
         for line in lines:
@@ -455,7 +459,6 @@ class HelpWindow(ctk.CTkToplevel):
         if bullet:
             tb.insert("end", "  • ")
             text = re.sub(r"^(\d+\.|-|\*)\s+", "", text)
-        # **bold** và `code`
         parts = re.split(r"(\*\*.+?\*\*|`.+?`)", text)
         for pt in parts:
             if pt.startswith("**") and pt.endswith("**"):
@@ -470,11 +473,12 @@ class HelpWindow(ctk.CTkToplevel):
 # =====================================================================
 
 PAGES = [
-    ("dash", "📊", "Tổng quan"),
-    ("proc", "⚙️", "Tiến trình"),
-    ("clean", "🧹", "Dọn rác"),
-    ("quar", "📦", "Khu cách ly"),
+    ("dash", "Overview"),
+    ("proc", "Processes"),
+    ("clean", "Disk Cleaner"),
+    ("quar", "Quarantine"),
 ]
+PAGE_ICONS = {"dash": "📊", "proc": "⚙️", "clean": "🧹", "quar": "📦"}
 
 
 class App(ctk.CTk):
@@ -486,6 +490,7 @@ class App(ctk.CTk):
         self.configure(fg_color=C_BG)
         _init_fonts()
         self._next_theme = None
+        self._busy = False  # True while a background task runs
         try:
             self.iconphoto(True, tk.PhotoImage(file=LOGO_PATH))
         except Exception:  # noqa: BLE001
@@ -507,6 +512,51 @@ class App(ctk.CTk):
         self._refresh_proc()
         self._refresh_quarantine()
 
+    # ------------------------- busy guard -------------------------
+    def _run_bg(self, buttons, work, done=None, status="Working..."):
+        """Run work() in a background thread.
+
+        Disables the given buttons while running so a button can never be
+        clicked twice (prevents duplicate threads / hangs). Re-enables them
+        when done. Returns False if a task is already running.
+        """
+        if self._busy:
+            return False
+        self._busy = True
+        for b in buttons:
+            try:
+                b.configure(state="disabled")
+            except Exception:  # noqa: BLE001
+                pass
+        self._set_status(status)
+
+        def runner():
+            try:
+                result = work()
+            except Exception as e:  # noqa: BLE001
+                result = e
+            self.after(0, lambda: self._finish_bg(buttons, result, done))
+
+        threading.Thread(target=runner, daemon=True).start()
+        return True
+
+    def _finish_bg(self, buttons, result, done):
+        self._busy = False
+        for b in buttons:
+            try:
+                b.configure(state="normal")
+            except Exception:  # noqa: BLE001
+                pass
+        self._set_status("")
+        if done:
+            done(result)
+
+    def _set_status(self, text):
+        try:
+            self.status_lbl.configure(text=text)
+        except Exception:  # noqa: BLE001
+            pass
+
     # ------------------------- shell -------------------------
     def _build_sidebar(self):
         sb = ctk.CTkFrame(self, fg_color=C_SIDEBAR, corner_radius=0, width=210)
@@ -527,10 +577,11 @@ class App(ctk.CTk):
         txt.pack(side="left")
         ctk.CTkLabel(txt, text="CleanBoost", font=(FONT, 19, "bold"),
                      anchor="w").pack(anchor="w")
-        ctk.CTkLabel(txt, text="PRO • dọn RAM & rác", font=(FONT, 11),
+        ctk.CTkLabel(txt, text="PRO", font=(FONT, 11),
                      text_color=C_MUT, anchor="w").pack(anchor="w")
 
-        for key, icon, label in PAGES:
+        for key, label in PAGES:
+            icon = PAGE_ICONS[key]
             b = ctk.CTkButton(sb, text=f"  {icon}  {label}", anchor="w",
                               fg_color="transparent", text_color=C_MUT,
                               hover_color=C_CARD2, font=(FONT, 13),
@@ -540,9 +591,9 @@ class App(ctk.CTk):
             self._nav_btns[key] = b
 
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
-        ctk.CTkLabel(sb, text="© copy by Đậu Sỹ Mạnh", font=(FONT, 11),
+        ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.2 PRO", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.3 PRO", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
@@ -555,13 +606,11 @@ class App(ctk.CTk):
         top.pack_propagate(False)
         self.page_title = ctk.CTkLabel(top, text="", font=(FONT, 19, "bold"))
         self.page_title.pack(side="left")
-        # help "?" góc phải
         help_btn = ctk.CTkButton(top, text="?", width=34, height=34,
-                                font=(FONT, 15, "bold"), fg_color=C_CARD2,
-                                hover_color=C_ACC,
-                                command=lambda: HelpWindow(self))
+                                 font=(FONT, 15, "bold"), fg_color=C_CARD2,
+                                 hover_color=C_ACC,
+                                 command=lambda: HelpWindow(self))
         help_btn.pack(side="right", padx=(8, 0))
-        # nút đổi theme sáng/tối
         self.theme_btn = ctk.CTkButton(
             top, text="☀️" if C_BG == THEMES["dark"]["BG"] else "🌙",
             width=34, height=34, font=(FONT, 14), fg_color=C_CARD2,
@@ -577,7 +626,7 @@ class App(ctk.CTk):
         # pages
         self.page_host = ctk.CTkFrame(main, fg_color=C_BG)
         self.page_host.pack(fill="both", expand=True, padx=20, pady=10)
-        for key, _icon, label in PAGES:
+        for key, label in PAGES:
             f = ctk.CTkFrame(self.page_host, fg_color=C_BG)
             self._pages[key] = (f, label)
         self._build_dashboard(self._pages["dash"][0])
@@ -616,17 +665,22 @@ class App(ctk.CTk):
             self._refresh_proc()
 
     def _tick_status(self):
-        try:
-            qn, qs = len(Q.list_items()), Q.total_size()
-            logp = action_log.path()
-            self.status_lbl.configure(
-                text=f"📦 Khu cách ly: {qn} mục ({qs/GB:.2f} GB)    "
-                     f"📝 Nhật ký: {logp}")
-        except Exception:  # noqa: BLE001
-            pass
-        self.after(10000, self._tick_status)
+        def work():
+            try:
+                n = len(Q.list_items())
+                s = Q.total_size()
+                return f"Quarantine: {n} items ({s/GB:.2f} GB)   Log: {action_log.path()}"
+            except Exception:  # noqa: BLE001
+                return ""
+        def done(text):
+            if text:
+                # don't override a task's own status message
+                if not self._busy:
+                    self._set_status(text)
+            self.after(10000, self._tick_status)
+        _bg(lambda: self.after(0, lambda: done(work())))
 
-    # ------------------------- Trang Tổng quan -------------------------
+    # ------------------------- Overview page -------------------------
     def _build_dashboard(self, page):
         self.d_banner = ctk.CTkLabel(page, text="", fg_color="#7f1d1d",
                                      corner_radius=10, text_color="#ffffff",
@@ -637,37 +691,39 @@ class App(ctk.CTk):
         self.g_ram.pack(side="left", padx=10)
         self.g_cpu = RingGauge(cards, "CPU")
         self.g_cpu.pack(side="left", padx=10)
-        self.g_disk = RingGauge(cards, "Ổ đĩa")
+        self.g_disk = RingGauge(cards, "Disk")
         self.g_disk.pack(side="left", padx=10)
 
-        ctk.CTkLabel(page, text="Hành động nhanh", font=(FONT, 14, "bold"),
+        ctk.CTkLabel(page, text="Quick actions", font=(FONT, 14, "bold"),
                      anchor="w").pack(anchor="w", pady=(10, 6))
         row = ctk.CTkFrame(page, fg_color="transparent")
         row.pack(fill="x")
 
         c1 = ctk.CTkFrame(row, fg_color=C_CARD, corner_radius=12)
         c1.pack(side="left", fill="both", expand=True, padx=(0, 8))
-        ctk.CTkLabel(c1, text="⚡ Giải phóng RAM khẩn cấp",
+        ctk.CTkLabel(c1, text="Emergency RAM release",
                      font=(FONT, 14, "bold"), anchor="w").pack(anchor="w", padx=16, pady=(14, 2))
-        ctk.CTkLabel(c1, text="Tự tìm app bạn đang không dùng mà ngốn RAM, "
-                              "cho bạn tick chọn rồi tắt hàng loạt.",
+        ctk.CTkLabel(c1, text="Finds your heaviest RAM-hungry apps, lets you "
+                              "tick the ones to close, then frees RAM.",
                      font=(FONT, 12), text_color=C_MUT, wraplength=380,
                      justify="left", anchor="w").pack(anchor="w", padx=16, pady=(0, 10))
-        ctk.CTkButton(c1, text="Giải phóng ngay", fg_color="#b91c1c",
-                      hover_color="#991b1b",
-                      command=self._emergency).pack(anchor="w", padx=16, pady=(0, 16))
+        self.emergency_btn = ctk.CTkButton(c1, text="Free RAM now", fg_color="#b91c1c",
+                                           hover_color="#991b1b",
+                                           command=self._emergency)
+        self.emergency_btn.pack(anchor="w", padx=16, pady=(0, 16))
 
         c2 = ctk.CTkFrame(row, fg_color=C_CARD, corner_radius=12)
         c2.pack(side="left", fill="both", expand=True, padx=(8, 0))
-        ctk.CTkLabel(c2, text="🧊 Dọn RAM nhẹ",
+        ctk.CTkLabel(c2, text="Light RAM clean",
                      font=(FONT, 14, "bold"), anchor="w").pack(anchor="w", padx=16, pady=(14, 2))
-        ctk.CTkLabel(c2, text="Xả bộ nhớ đệm RAM (Standby List) — không tắt "
-                              "bất kỳ app nào. An toàn tuyệt đối.",
+        ctk.CTkLabel(c2, text="Flushes RAM standby cache without closing any "
+                              "app. Completely safe.",
                      font=(FONT, 12), text_color=C_MUT, wraplength=380,
                      justify="left", anchor="w").pack(anchor="w", padx=16, pady=(0, 10))
-        ctk.CTkButton(c2, text="Dọn nhẹ", fg_color="#047857",
-                      hover_color="#065f46",
-                      command=self._light).pack(anchor="w", padx=16, pady=(0, 16))
+        self.light_btn = ctk.CTkButton(c2, text="Light clean", fg_color="#047857",
+                                       hover_color="#065f46",
+                                       command=self._light)
+        self.light_btn.pack(anchor="w", padx=16, pady=(0, 16))
 
         self.dash_msg = ctk.CTkLabel(page, text="", text_color=C_MUT,
                                      font=(FONT, 12), wraplength=900,
@@ -682,14 +738,14 @@ class App(ctk.CTk):
             disk = system_info.disk(root)
             self.g_ram.set(mem["percent"], f"{mem['used']/GB:.1f}/{mem['total']/GB:.1f} GB")
             self.g_cpu.set(min(cpu, 100), "")
-            self.g_disk.set(disk["percent"], f"còn trống {100-disk['percent']:.0f}%")
+            self.g_disk.set(disk["percent"], f"{100-disk['percent']:.0f}% free")
             warns = []
             if mem["percent"] >= 90:
-                warns.append(f"RAM đã dùng {mem['percent']:.0f}% — hãy giải phóng!")
+                warns.append(f"RAM is {mem['percent']:.0f}% full — free some RAM!")
             if 100 - disk["percent"] <= 10:
-                warns.append(f"ổ đĩa chỉ còn trống {100-disk['percent']:.0f}% — hãy dọn rác!")
+                warns.append(f"Disk only {100-disk['percent']:.0f}% free — clean junk files!")
             if warns:
-                self.d_banner.configure(text="⚠️ " + "  |  ".join(warns))
+                self.d_banner.configure(text="WARNING: " + "  |  ".join(warns))
                 self.d_banner.pack(fill="x", pady=(0, 8), before=self.g_ram.master)
             else:
                 self.d_banner.pack_forget()
@@ -698,45 +754,50 @@ class App(ctk.CTk):
         self.after(2000, self._tick_dashboard)
 
     def _light(self):
-        self.dash_msg.configure(text="Đang dọn...")
-        def work():
-            msgs = memory_cleaner.light_clean()
-            self.after(0, lambda: self.dash_msg.configure(text="🧊 " + " | ".join(msgs)))
-            action_log.log("freeram_light", {"messages": msgs})
-        _bg(work)
+        self.dash_msg.configure(text="")
+        self._run_bg([self.light_btn],
+                     lambda: memory_cleaner.light_clean(),
+                     done=lambda msgs: self.dash_msg.configure(
+                         "Light clean done: " + " | ".join(msgs)
+                         if not isinstance(msgs, Exception) else f"Error: {msgs}"),
+                     status="Cleaning RAM cache...")
 
     def _emergency(self):
-        self.dash_msg.configure(text="Đang tìm app ngốn RAM...")
-        def work():
-            cands = process_manager.emergency_candidates(min_rss_mb=200)
-            self.after(0, lambda: self._open_emergency(cands))
-        _bg(work)
+        self.dash_msg.configure(text="")
+        self._run_bg([self.emergency_btn],
+                     lambda: process_manager.emergency_candidates(min_rss_mb=200),
+                     done=self._open_emergency,
+                     status="Finding RAM-hungry apps...")
 
     def _open_emergency(self, cands):
+        if isinstance(cands, Exception):
+            self.dash_msg.configure(text=f"Error: {cands}")
+            return
         if not cands:
-            self.dash_msg.configure(text="Không tìm thấy app nào của bạn ngốn trên 200 MB.")
+            self.dash_msg.configure(text="No app of yours is using over 200 MB.")
             return
         EmergencyDialog(self, cands, self._after_emergency)
 
     def _after_emergency(self, killed):
         if killed:
-            self.dash_msg.configure(text=f"⚡ Đã tắt {killed} app. Đang xả lại RAM...")
+            self.dash_msg.configure(text=f"Closed {killed} app(s). Flushing RAM...")
             self._light()
             action_log.log("freeram_emergency", {"killed": killed})
         else:
-            self.dash_msg.configure(text="Không tắt gì cả.")
+            self.dash_msg.configure(text="Nothing was closed.")
 
-    # ------------------------- Trang Tiến trình -------------------------
+    # ------------------------- Processes page -------------------------
     def _build_processes(self, page):
         top = ctk.CTkFrame(page, fg_color="transparent")
         top.pack(fill="x", pady=(0, 8))
-        self.p_search = ctk.CTkEntry(top, placeholder_text="🔍 Tìm tiến trình...",
+        self.p_search = ctk.CTkEntry(top, placeholder_text="Search processes...",
                                     width=300, height=36)
         self.p_search.pack(side="left", padx=(0, 8))
         self.p_search.bind("<KeyRelease>", lambda _e: self._fill_proc())
-        ctk.CTkButton(top, text="↻ Làm mới", width=110, height=36,
-                      fg_color=C_CARD2, hover_color=C_ACC,
-                      command=self._refresh_proc).pack(side="left")
+        self.p_refresh_btn = ctk.CTkButton(top, text="Refresh", width=110, height=36,
+                                           fg_color=C_CARD2, hover_color=C_ACC,
+                                           command=self._refresh_proc)
+        self.p_refresh_btn.pack(side="left")
         self.p_count = ctk.CTkLabel(top, text="", text_color=C_MUT)
         self.p_count.pack(side="left", padx=12)
 
@@ -746,7 +807,7 @@ class App(ctk.CTk):
         self.p_tree.heading("ram", text="RAM", command=lambda: self._sort_proc("rss"))
         self.p_tree.heading("cpu", text="CPU %", command=lambda: self._sort_proc("cpu"))
         self.p_tree.heading("user", text="User")
-        self.p_tree.heading("name", text="Tên tiến trình")
+        self.p_tree.heading("name", text="Process name")
         self.p_tree.column("#0", width=90)
         self.p_tree.column("ram", width=110)
         self.p_tree.column("cpu", width=90)
@@ -755,28 +816,33 @@ class App(ctk.CTk):
 
         row = ctk.CTkFrame(page, fg_color="transparent")
         row.pack(fill="x")
-        ctk.CTkButton(row, text="Tắt đã chọn", height=36,
-                      command=lambda: self._kill_selected(False)).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(row, text="🔴 Force kill", height=36, fg_color="#b91c1c",
-                      hover_color="#991b1b",
-                      command=lambda: self._kill_selected(True)).pack(side="left")
-        ctk.CTkLabel(row, text="⚠️ = nhạy cảm (hỏi lại trước khi tắt) • Process hệ thống nguy hiểm đã ẩn",
+        self.p_kill_btn = ctk.CTkButton(row, text="End selected", height=36,
+                                        command=lambda: self._kill_selected(False))
+        self.p_kill_btn.pack(side="left", padx=(0, 8))
+        self.p_fkill_btn = ctk.CTkButton(row, text="Force kill", height=36,
+                                         fg_color="#b91c1c", hover_color="#991b1b",
+                                         command=lambda: self._kill_selected(True))
+        self.p_fkill_btn.pack(side="left")
+        ctk.CTkLabel(row, text="(!) = sensitive, asks first. Dangerous system processes are hidden.",
                      text_color=C_MUT, font=(FONT, 11)).pack(side="left", padx=14)
         self.p_msg = ctk.CTkLabel(page, text="", text_color=C_MUT, font=(FONT, 12))
         self.p_msg.pack(anchor="w", pady=(6, 0))
 
     def _refresh_proc(self):
-        self.p_msg.configure(text="Đang tải...")
-        def work():
-            rows = process_manager.list_processes(sort_by="memory", limit=300)
-            self.after(0, lambda: self._set_proc_rows(rows))
-        _bg(work)
+        self.p_msg.configure(text="")
+        self._run_bg([self.p_refresh_btn],
+                     lambda: process_manager.list_processes(sort_by="memory", limit=300),
+                     done=self._set_proc_rows,
+                     status="Loading processes...")
 
     def _set_proc_rows(self, rows):
+        if isinstance(rows, Exception):
+            self.p_msg.configure(text=f"Error: {rows}")
+            return
         self._proc_rows = rows
         self._fill_proc()
         self.p_msg.configure(text="")
-        self.p_count.configure(text=f"{len(rows)} tiến trình")
+        self.p_count.configure(text=f"{len(rows)} processes")
 
     def _sort_proc(self, key):
         rev = not (self._proc_sort[0] == key and self._proc_sort[1])
@@ -796,43 +862,56 @@ class App(ctk.CTk):
             tag = "warn" if r["state"] == "warn" else ""
             self.p_tree.insert("", "end", iid=str(r["pid"]), text=str(r["pid"]),
                                values=(f"{r['rss']/GB:.1f} GB", f"{r['cpu']:.1f}",
-                                       r["user"], r["name"] + (" ⚠️" if tag else "")),
+                                       r["user"], r["name"] + (" (!)" if tag else "")),
                                tags=(tag,))
         self.p_tree.tag_configure("warn", foreground=C_YLW)
-        self.p_count.configure(text=f"{n} tiến trình")
+        self.p_count.configure(text=f"{n} processes")
 
     def _kill_selected(self, force):
         sel = self.p_tree.selection()
         if not sel:
-            self.p_msg.configure(text="Chưa chọn tiến trình nào.")
+            self.p_msg.configure(text="No process selected.")
             return
         from tkinter import messagebox
-        n = 0
+        targets = []
         for iid in sel:
             pid = int(iid)
             r = next((x for x in self._proc_rows if x["pid"] == pid), None)
             name = r["name"] if r else f"PID {pid}"
             if protected.check_process(name, pid) == "warn":
-                if not messagebox.askyesno("Xác nhận",
-                        f"{name} là process hệ thống nhạy cảm.\nVẫn tắt?",
+                if not messagebox.askyesno("Confirm",
+                        f"{name} is a sensitive system process.\nClose it anyway?",
                         parent=self):
                     continue
-            ok, _ = process_manager.kill_process(pid, force=force)
-            n += ok
-        action_log.log("kill_gui", {"force": force, "killed": n})
-        self.p_msg.configure(text=f"Đã tắt {n}/{len(sel)} tiến trình.")
-        self._refresh_proc()
+            targets.append((pid, name))
 
-    # ------------------------- Trang Dọn rác -------------------------
+        def work():
+            n = 0
+            for pid, _name in targets:
+                ok, _ = process_manager.kill_process(pid, force=force)
+                n += ok
+            return n
+
+        def done(n):
+            if isinstance(n, Exception):
+                self.p_msg.configure(text=f"Error: {n}")
+                return
+            action_log.log("kill_gui", {"force": force, "killed": n})
+            self.p_msg.configure(text=f"Closed {n}/{len(targets)} process(es).")
+            self._refresh_proc()
+
+        self._run_bg([self.p_kill_btn, self.p_fkill_btn], work, done=done,
+                     status="Closing processes...")
+
+    # ------------------------- Disk Cleaner page -------------------------
     def _build_cleaner(self, page):
-        # mức dọn: 3 cards
         lv = ctk.CTkFrame(page, fg_color="transparent")
         lv.pack(fill="x", pady=(0, 8))
         self._lv_cards = {}
         lv_data = [
-            (1, "🟢 Tiêu chuẩn", "Temp, thùng rác, cache\nAn toàn tuyệt đối", C_GRN),
-            (2, "🟡 Nâng cao", "Update, WinSxS, Windows.old,\ndata app đã gỡ • cần Admin", C_YLW),
-            (3, "🔴 Chuyên sâu", "Quét toàn ổ C, mục nguy hiểm\nAdmin + xác nhận", C_RED),
+            (1, "Standard", "Temp files, recycle bin, browser/app caches\nCompletely safe", C_GRN),
+            (2, "Advanced", "Windows Update, WinSxS, Windows.old,\nleftover app data - needs Admin", C_YLW),
+            (3, "Deep", "Whole-drive junk patterns, risky items\nAdmin + confirmation", C_RED),
         ]
         for i, title, desc, color in lv_data:
             card = ctk.CTkFrame(lv, fg_color=C_CARD, corner_radius=12,
@@ -851,7 +930,7 @@ class App(ctk.CTk):
 
         row = ctk.CTkFrame(page, fg_color="transparent")
         row.pack(fill="x", pady=(0, 6))
-        self.c_scan_btn = ctk.CTkButton(row, text="🔍 Quét thử", width=150, height=38,
+        self.c_scan_btn = ctk.CTkButton(row, text="Scan", width=150, height=38,
                                         fg_color=C_ACC, hover_color="#3b7ded",
                                         font=(FONT, 13, "bold"),
                                         command=self._scan)
@@ -859,28 +938,28 @@ class App(ctk.CTk):
         self.c_prog = ctk.CTkProgressBar(row, width=280, height=12)
         self.c_prog.pack(side="left", padx=6)
         self.c_prog.set(0)
-        self.c_total = ctk.CTkLabel(row, text="Chọn mức rồi bấm Quét thử",
+        self.c_total = ctk.CTkLabel(row, text="Pick a level, then press Scan",
                                     font=(FONT, 13, "bold"), text_color=C_ACC)
         self.c_total.pack(side="left", padx=10)
 
         self.c_results = ctk.CTkScrollableFrame(
-            page, label_text="Kết quả quét — tick chọn nhóm, bấm «Chi tiết» để xem file",
+            page, label_text="Scan results — tick groups, press Details to preview files",
             label_font=(FONT, 12, "bold"))
         self.c_results.pack(fill="both", expand=True, pady=(0, 8))
 
         brow = ctk.CTkFrame(page, fg_color="transparent")
         brow.pack(fill="x")
-        self.c_del_btn = ctk.CTkButton(brow, text="🗑 Xóa để giải phóng dung lượng",
+        self.c_del_btn = ctk.CTkButton(brow, text="Delete to free space",
                                        height=40, fg_color="#b91c1c",
                                        hover_color="#991b1b", font=(FONT, 13, "bold"),
                                        command=lambda: self._do_clean(True))
         self.c_del_btn.pack(side="left", padx=(0, 8))
-        self.c_q_btn = ctk.CTkButton(brow, text="📦 Cách ly (an toàn)",
+        self.c_q_btn = ctk.CTkButton(brow, text="Quarantine (safe)",
                                      height=40, fg_color="#b45309",
                                      hover_color="#92400e", font=(FONT, 13),
                                      command=lambda: self._do_clean(False))
         self.c_q_btn.pack(side="left")
-        ctk.CTkLabel(brow, text="«Xóa» giải phóng GB thật (đo từ ổ đĩa). «Cách ly» an toàn hơn nhưng file vẫn nằm trên ổ đĩa.",
+        ctk.CTkLabel(brow, text="Delete frees real disk space (measured from the drive). Quarantine is safer but files stay on disk.",
                      text_color=C_MUT, font=(FONT, 11), wraplength=420,
                      justify="left").pack(side="left", padx=14)
 
@@ -890,29 +969,28 @@ class App(ctk.CTk):
             card.configure(border_color=color if k == i else C_LINE)
 
     def _scan(self):
-        self.c_scan_btn.configure(state="disabled")
-        self.c_prog.start()
         for w in self.c_results.winfo_children():
             w.destroy()
         self._scan_checks = {}
-        self.c_total.configure(text="Đang quét...")
+        self.c_total.configure(text="Scanning...")
+        self.c_prog.start()
         level = self._level.get()
 
         def work():
-            try:
-                results = [scanner.scan_rule(r, collect_paths=True)
-                           for r in engine.rules_for(level)]
-            except Exception as e:  # noqa: BLE001
-                results = e
-            self.after(0, lambda: self._show_scan(results))
-        _bg(work)
+            return [scanner.scan_rule(r, collect_paths=True)
+                    for r in engine.rules_for(level)]
+
+        def done(results):
+            self.c_prog.stop()
+            self.c_prog.set(0)
+            self._show_scan(results)
+
+        self._run_bg([self.c_scan_btn, self.c_del_btn, self.c_q_btn],
+                     work, done=done, status="Scanning...")
 
     def _show_scan(self, results):
-        self.c_prog.stop()
-        self.c_prog.set(0)
-        self.c_scan_btn.configure(state="normal")
         if isinstance(results, Exception):
-            self.c_total.configure(text=f"Lỗi quét: {results}")
+            self.c_total.configure(text=f"Scan error: {results}")
             return
         self._last_scan = results
         shown = 0
@@ -934,83 +1012,85 @@ class App(ctk.CTk):
             cb.pack(side="left")
             name = rule["name"]
             if rule.get("risk") == "high":
-                name += "  🔴"
+                name += "  [HIGH RISK]"
             elif rule.get("risk") == "medium":
-                name += "  🟡"
+                name += "  [caution]"
             ctk.CTkLabel(top, text=name, font=(FONT, 12, "bold"),
                          wraplength=520, justify="left").pack(side="left")
             ctk.CTkLabel(top, text=_fmt_gb(res["size"]), font=(FONT, 13, "bold"),
                          text_color=C_ACC).pack(side="right", padx=(8, 0))
-            ctk.CTkButton(top, text="Chi tiết", width=80, height=28,
+            ctk.CTkButton(top, text="Details", width=80, height=28,
                           fg_color=C_CARD2, hover_color=C_ACC,
                           command=lambda r=res: DetailDialog(self, r)).pack(side="right")
 
-            ctk.CTkLabel(card, text=rule.get("impact", ""), font=(FONT, 11),
+            impact_txt = rule.get("impact", "")
+            if res.get("truncated"):
+                impact_txt += " (File list capped at 200,000 for performance.)"
+            ctk.CTkLabel(card, text=impact_txt, font=(FONT, 11),
                          text_color=C_MUT, wraplength=760,
                          justify="left", anchor="w").pack(anchor="w", padx=(48, 10), pady=(0, 8))
             self._scan_checks[rule["id"]] = (var, res)
         if not shown:
-            ctk.CTkLabel(self.c_results, text="Sạch! Không tìm thấy gì để dọn ở mức này. 🎉",
+            ctk.CTkLabel(self.c_results, text="All clean! Nothing to remove at this level.",
                          font=(FONT, 13), text_color=C_GRN).pack(pady=20)
         self._update_total()
 
     def _update_total(self):
         total = sum(res["size"] for var, res in self._scan_checks.values() if var.get())
         n = sum(1 for var, _ in self._scan_checks.values() if var.get())
-        self.c_total.configure(text=f"Đã chọn {n} nhóm • Tổng {_fmt_gb(total)}")
-        self.c_del_btn.configure(text=f"🗑 Xóa {_fmt_gb(total)} để giải phóng")
+        self.c_total.configure(text=f"{n} groups selected — total {_fmt_gb(total)}")
+        self.c_del_btn.configure(text=f"Delete {_fmt_gb(total)} to free space")
 
     def _checked(self):
-        return [(rule, res["size"]) for rid, (var, res) in self._scan_checks.items()
-                if var.get() for rule in [res["rule"]]]
+        return [(res["rule"], res["size"])
+                for _rid, (var, res) in self._scan_checks.items() if var.get()]
 
     def _do_clean(self, permanent):
         from tkinter import messagebox
         items = self._checked()
         if not items:
-            messagebox.showwarning("Chưa chọn", "Bạn chưa tick nhóm nào để dọn.", parent=self)
+            messagebox.showwarning("Nothing selected",
+                                   "Tick at least one group first.", parent=self)
             return
         dlg = ConfirmCleanDialog(self, items, permanent)
         self.wait_window(dlg)
         if not dlg.result:
             return
         if self._level.get() >= 2 and sys.platform == "win32":
-            messagebox.showinfo("An toàn", "App sẽ tự tạo System Restore Point trước khi dọn.", parent=self)
-        self.c_del_btn.configure(state="disabled")
-        self.c_q_btn.configure(state="disabled")
+            messagebox.showinfo("Safety",
+                                "A System Restore Point will be created before cleaning.",
+                                parent=self)
         self.c_prog.start()
         level, results = self._level.get(), self._last_scan
         ids = {rule["id"] for rule, _ in items}
 
         def work():
-            try:
-                summary = clean_rules(results, ids, permanent=permanent, level=level)
-            except Exception as e:  # noqa: BLE001
-                summary = e
-            self.after(0, lambda: self._after_clean(summary))
-        _bg(work)
+            return clean_rules(results, ids, permanent=permanent, level=level)
+
+        def done(summary):
+            self.c_prog.stop()
+            self.c_prog.set(0)
+            self._after_clean(summary)
+
+        self._run_bg([self.c_scan_btn, self.c_del_btn, self.c_q_btn],
+                     work, done=done, status="Cleaning...")
 
     def _after_clean(self, summary):
-        self.c_prog.stop()
-        self.c_prog.set(0)
-        self.c_del_btn.configure(state="normal")
-        self.c_q_btn.configure(state="normal")
         if isinstance(summary, Exception):
             from tkinter import messagebox
-            messagebox.showerror("Lỗi", f"Dọn thất bại: {summary}", parent=self)
+            messagebox.showerror("Error", f"Cleanup failed: {summary}", parent=self)
             return
-        ResultDialog(self, "Hoàn tất dọn dẹp", fmt_summary(summary))
+        ResultDialog(self, "Cleanup finished", fmt_summary(summary))
         self._refresh_quarantine()
-        self._tick_status()
         for w in self.c_results.winfo_children():
             w.destroy()
         self._scan_checks = {}
-        self.c_total.configure(text="Đã dọn xong — bấm Quét thử để kiểm tra lại.")
-        self.c_del_btn.configure(text="🗑 Xóa để giải phóng dung lượng")
+        self.c_total.configure(text="Done — press Scan to check again.")
+        self.c_del_btn.configure(text="Delete to free space")
 
-    # ------------------------- Trang Khu cách ly -------------------------
+    # ------------------------- Quarantine page -------------------------
     def _build_quarantine(self, page):
-        ctk.CTkLabel(page, text="File đã dọn được giữ ở đây 14 ngày. Muốn giải phóng dung lượng THẬT, hãy «Xóa vĩnh viễn».",
+        ctk.CTkLabel(page, text="Removed files stay here for 14 days. To REALLY free disk space, use Delete permanently.",
                      text_color=C_MUT, font=(FONT, 12), anchor="w",
                      wraplength=900, justify="left").pack(anchor="w", pady=(0, 8))
         self.q_tree = _dark_tree(page)
@@ -1019,9 +1099,9 @@ class App(ctk.CTk):
         self.q_tree.bind("<Control-A>", self._q_select_all)
         self.q_tree["columns"] = ("orig", "size", "date", "rule")
         self.q_tree.heading("#0", text="ID")
-        self.q_tree.heading("orig", text="File gốc")
-        self.q_tree.heading("size", text="Dung lượng")
-        self.q_tree.heading("date", text="Ngày cách ly")
+        self.q_tree.heading("orig", text="Original file")
+        self.q_tree.heading("size", text="Size")
+        self.q_tree.heading("date", text="Quarantined at")
         self.q_tree.heading("rule", text="Rule")
         self.q_tree.column("#0", width=120)
         self.q_tree.column("orig", width=420)
@@ -1032,25 +1112,36 @@ class App(ctk.CTk):
 
         row = ctk.CTkFrame(page, fg_color="transparent")
         row.pack(fill="x")
-        ctk.CTkButton(row, text="↻ Làm mới", height=36, fg_color=C_CARD2,
-                      hover_color=C_ACC,
-                      command=self._refresh_quarantine).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(row, text="↩ Khôi phục đã chọn", height=36, fg_color="#047857",
-                      hover_color="#065f46",
-                      command=self._q_restore).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(row, text="🗑 Xóa vĩnh viễn đã chọn", height=36, fg_color="#b91c1c",
-                      hover_color="#991b1b",
-                      command=self._q_delete).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(row, text="🧹 Dọn mục quá 14 ngày", height=36, fg_color=C_CARD2,
-                      hover_color=C_ACC,
-                      command=self._q_purge).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(row, text="☑ Chọn tất cả", height=36, fg_color=C_CARD2,
-                      hover_color=C_ACC,
-                      command=lambda: self._q_select_all(None)).pack(side="left")
+        self.q_refresh_btn = ctk.CTkButton(row, text="Refresh", height=36, fg_color=C_CARD2,
+                                           hover_color=C_ACC,
+                                           command=self._refresh_quarantine)
+        self.q_refresh_btn.pack(side="left", padx=(0, 8))
+        self.q_restore_btn = ctk.CTkButton(row, text="Restore selected", height=36,
+                                           fg_color="#047857", hover_color="#065f46",
+                                           command=self._q_restore)
+        self.q_restore_btn.pack(side="left", padx=(0, 8))
+        self.q_delete_btn = ctk.CTkButton(row, text="Delete permanently", height=36,
+                                          fg_color="#b91c1c", hover_color="#991b1b",
+                                          command=self._q_delete)
+        self.q_delete_btn.pack(side="left", padx=(0, 8))
+        self.q_purge_btn = ctk.CTkButton(row, text="Clean items over 14 days", height=36,
+                                         fg_color=C_CARD2, hover_color=C_ACC,
+                                         command=self._q_purge)
+        self.q_purge_btn.pack(side="left", padx=(0, 8))
+        self.q_all_btn = ctk.CTkButton(row, text="Select all", height=36, fg_color=C_CARD2,
+                                       hover_color=C_ACC,
+                                       command=lambda: self._q_select_all(None))
+        self.q_all_btn.pack(side="left")
         self.q_msg = ctk.CTkLabel(page, text="", text_color=C_MUT, font=(FONT, 12))
         self.q_msg.pack(anchor="w", pady=(8, 0))
-        ctk.CTkLabel(page, text="Mẹo: bấm Ctrl+A để chọn tất cả, giữ Ctrl/Shift để chọn nhiều dòng.",
+        ctk.CTkLabel(page, text="Tip: press Ctrl+A to select all, hold Ctrl/Shift for multiple rows.",
                      text_color=C_MUT, font=(FONT, 11)).pack(anchor="w")
+        self._q_buttons = [self.q_refresh_btn, self.q_restore_btn,
+                           self.q_delete_btn, self.q_purge_btn, self.q_all_btn]
+
+    def _q_select_all(self, _event):
+        self.q_tree.selection_set(self.q_tree.get_children())
+        return "break"
 
     def _refresh_quarantine(self):
         for i in self.q_tree.get_children():
@@ -1061,50 +1152,74 @@ class App(ctk.CTk):
                                values=(it["orig"], _fmt_gb(it["size"]),
                                        it.get("quarantined_at", "")[:16].replace("T", " "),
                                        it.get("rule", "")))
-        self.q_msg.configure(text=f"{len(items)} mục — {Q.total_size()/GB:.2f} GB đang nằm trong khu cách ly (chưa giải phóng)")
-
-    def _q_select_all(self, _event):
-        self.q_tree.selection_set(self.q_tree.get_children())
-        return "break"
+        self.q_msg.configure(
+            text=f"{len(items)} item(s) — {Q.total_size()/GB:.2f} GB in quarantine (not freed yet)")
 
     def _q_restore(self):
         from tkinter import messagebox
         sel = self.q_tree.selection()
         if not sel:
             return
-        msgs = []
-        for iid in sel:
-            ok, msg = Q.restore(iid)
-            msgs.append(("✅ " if ok else "⚠️ ") + msg)
-            action_log.log("quarantine_restore", {"id": iid, "ok": ok})
-        messagebox.showinfo("Khôi phục", "\n".join(msgs[:10]), parent=self)
-        self._refresh_quarantine()
-        self._tick_status()
+
+        def work():
+            msgs = []
+            for iid in sel:
+                ok, msg = Q.restore(iid)
+                msgs.append(("OK " if ok else "! ") + msg)
+                action_log.log("quarantine_restore", {"id": iid, "ok": ok})
+            return msgs
+
+        def done(msgs):
+            if isinstance(msgs, Exception):
+                messagebox.showerror("Error", str(msgs), parent=self)
+                return
+            messagebox.showinfo("Restore", "\n".join(msgs[:10]), parent=self)
+            self._refresh_quarantine()
+
+        self._run_bg(self._q_buttons, work, done=done, status="Restoring...")
 
     def _q_delete(self):
         from tkinter import messagebox
         sel = self.q_tree.selection()
         if not sel:
             return
-        if not messagebox.askyesno("Xác nhận",
-                f"Xóa VĨNH VIỄN {len(sel)} mục? Dung lượng sẽ được giải phóng thật.",
+        if not messagebox.askyesno("Confirm",
+                f"PERMANENTLY delete {len(sel)} item(s)? This frees real disk space.",
                 parent=self):
             return
-        for iid in sel:
-            ok, _ = Q.delete_permanent(iid)
-            action_log.log("quarantine_delete", {"id": iid, "ok": ok})
-        self._refresh_quarantine()
-        self._tick_status()
+
+        def work():
+            for iid in sel:
+                ok, _ = Q.delete_permanent(iid)
+                action_log.log("quarantine_delete", {"id": iid, "ok": ok})
+            return len(sel)
+
+        def done(n):
+            self._refresh_quarantine()
+
+        self._run_bg(self._q_buttons, work, done=done,
+                     status="Deleting permanently...")
 
     def _q_purge(self):
         from tkinter import messagebox
-        n, freed = Q.purge_expired()
-        action_log.log("quarantine_purge", {"removed": n, "freed": freed})
-        messagebox.showinfo("Dọn quá hạn",
-                            f"Đã xóa vĩnh viễn {n} mục quá 14 ngày ({freed/GB:.2f} GB).",
-                            parent=self)
-        self._refresh_quarantine()
-        self._tick_status()
+
+        def work():
+            n, freed = Q.purge_expired()
+            action_log.log("quarantine_purge", {"removed": n, "freed": freed})
+            return n, freed
+
+        def done(res):
+            if isinstance(res, Exception):
+                messagebox.showerror("Error", str(res), parent=self)
+                return
+            n, freed = res
+            messagebox.showinfo("Clean expired",
+                                f"Permanently deleted {n} item(s) older than 14 days ({freed/GB:.2f} GB).",
+                                parent=self)
+            self._refresh_quarantine()
+
+        self._run_bg(self._q_buttons, work, done=done,
+                     status="Cleaning expired items...")
 
 
 def main():
@@ -1113,7 +1228,6 @@ def main():
         app.mainloop()
         if not app._next_theme:
             break
-        # theme đã được set_theme() trước khi destroy -> vòng lặp vẽ lại
 
 
 if __name__ == "__main__":

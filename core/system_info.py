@@ -1,4 +1,4 @@
-"""Đọc thông tin RAM / CPU / ổ đĩa realtime qua psutil."""
+"""Realtime RAM / CPU / disk info via psutil."""
 import psutil
 
 GB = 1024 ** 3

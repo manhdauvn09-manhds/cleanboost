@@ -70,9 +70,12 @@ def check_process(name: str, pid: int) -> str:
 
 
 def is_protected_path(path: str) -> bool:
-    """True nếu path nằm trong vùng cấm."""
+    """True nếu path nằm trong vùng cấm.
+
+    Dùng realpath để chống bypass qua symlink.
+    """
     try:
-        target = _norm(os.path.abspath(path))
+        target = _norm(os.path.realpath(os.path.abspath(path)))
     except Exception:
         return True  # không chắc -> coi như cấm cho an toàn
     if sys.platform == "win32":

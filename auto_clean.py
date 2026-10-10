@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""CleanBoost — dọn tự động định kỳ (headless, không cần người bấm).
+"""CleanBoost — automatic periodic cleanup (headless).
 
-Quét mức 1, chỉ dọn các rule low-risk + default_on, LUÔN vào khu cách ly.
-Dùng cho Task Scheduler (Windows) / cron (Linux).
+Scans level 1, cleans only low-risk + default_on rules, ALWAYS to quarantine.
+Used by Task Scheduler (Windows) / cron (Linux).
 
     python auto_clean.py [--dry-run] [--level 1]
 """
@@ -21,12 +21,12 @@ from core import privilege, system_info
 def main():
     ap = argparse.ArgumentParser(description="CleanBoost auto clean (headless)")
     ap.add_argument("--dry-run", action="store_true",
-                    help="Chỉ in ra sẽ dọn gì, không dọn thật")
+                    help="Only print what would be cleaned, no real cleanup")
     ap.add_argument("--level", type=int, choices=[1, 2, 3], default=1)
     args = ap.parse_args()
 
     admin = privilege.is_admin()
-    print(f"[auto_clean] Quét mức {args.level} (quyền: {privilege.privilege_label()})...")
+    print(f"[auto_clean] Scanning level {args.level} (rights: {privilege.privilege_label()})...")
     results = [scanner.scan_rule(r, collect_paths=True)
                for r in engine.rules_for(args.level)]
 
@@ -38,8 +38,8 @@ def main():
            and (admin or not res["rule"].get("requires_admin"))}
     total = sum(res["size"] for res in results
                 if res["rule"]["id"] in ids)
-    print(f"[auto_clean] Sẽ dọn {len(ids)} nhóm, ~{total / 1024**3:.2f} GB "
-          f"(vào khu cách ly).")
+    print(f"[auto_clean] Will clean {len(ids)} group(s), ~{total / 1024**3:.2f} GB "
+          f"(to quarantine).")
     action_log.log("auto_clean_scan", {"level": args.level,
                                        "groups": len(ids),
                                        "bytes": total,

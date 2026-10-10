@@ -1,4 +1,4 @@
-"""Liệt kê & kill process an toàn (luôn đi qua lớp bảo vệ)."""
+"""List and safely kill processes (always through the protection layer)."""
 import getpass
 import time
 
@@ -26,7 +26,7 @@ def _prime_cpu():
 
 def list_processes(sort_by: str = "memory", limit: int = 20,
                    include_system: bool = False) -> list:
-    """Danh sách process, mặc định ẩn process hệ thống bị block."""
+    """Process list; blocked system processes are hidden by default."""
     _prime_cpu()
     time.sleep(0.4)
     me = _me()
@@ -59,41 +59,41 @@ def list_processes(sort_by: str = "memory", limit: int = 20,
 
 
 def kill_process(pid: int, force: bool = False):
-    """Kill 1 process. Trả về (ok, message). Không bao giờ hỏi user ở đây."""
+    """Kill one process. Returns (ok, message). Never prompts the user here."""
     try:
         p = psutil.Process(pid)
         name = p.name() or f"PID {pid}"
     except psutil.NoSuchProcess:
-        return False, "Tiến trình không còn tồn tại."
+        return False, "The process no longer exists."
     except psutil.AccessDenied:
-        return False, "⛔ Không đọc được thông tin process (cần quyền cao hơn)."
+        return False, "Cannot read process info (higher rights needed)."
 
     if protected.check_process(name, pid) == "block":
         return False, (
-            f"⛔ {name} (PID {pid}) là tiến trình hệ thống được BẢO VỆ — "
-            "từ chối kill để tránh sập OS."
+            f"{name} (PID {pid}) is a PROTECTED system process — "
+            "refusing to kill to avoid crashing the OS."
         )
     try:
         if force:
             p.kill()
         else:
-            p.terminate()  # cho app cơ hội tự dọn dẹp
+            p.terminate()  # let the app clean up itself
             try:
                 p.wait(timeout=5)
             except psutil.TimeoutExpired:
-                p.kill()  # lì quá -> force
-        return True, f"✅ Đã {'force kill' if force else 'kill'} {name} (PID {pid})."
+                p.kill()  # stubborn -> force
+        return True, f"Done {'force kill' if force else 'kill'} {name} (PID {pid})."
     except psutil.NoSuchProcess:
-        return True, f"✅ {name} (PID {pid}) đã thoát."
+        return True, f"{name} (PID {pid}) has exited."
     except psutil.AccessDenied:
         return False, (
-            "⛔ Access denied — hãy chạy app với quyền Admin "
-            "(Windows) / sudo (Linux) rồi thử lại."
+            "Access denied — run the app as Admin "
+            "(Windows) / sudo (Linux) and try again."
         )
 
 
 def emergency_candidates(min_rss_mb: int = 200) -> list:
-    """Các process CỦA USER HIỆN TẠI, ngốn RAM, không bị bảo vệ.
+    """Processes of the CURRENT USER that use lots of RAM and are unprotected.
 
     Dùng cho chế độ 'giải phóng RAM khẩn cấp'. Caller phải hỏi user
     xác nhận trước khi kill (trừ khi user đã dùng --yes).

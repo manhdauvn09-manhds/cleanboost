@@ -12,7 +12,7 @@ version: 1
 rules:
   # ------------------------- WINDOWS -------------------------
   - id: win_user_temp
-    name: "Temp của user (%TEMP%)"
+    name: "User temp files"
     level: 1
     os: [windows]
     paths: ["%TEMP%", "%LOCALAPPDATA%\\Temp"]
@@ -23,11 +23,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Không ảnh hưởng. App đang chạy tự bỏ qua file đang dùng."
-    note: "Chỉ xóa file > 1 ngày tuổi, bỏ qua file đang bị khóa"
+    impact: "No effect. Running apps automatically skip files in use."
+    note: "Only files older than 1 day; locked files are skipped"
 
   - id: win_recycle_bin
-    name: "Thùng rác (Recycle Bin)"
+    name: "Recycle Bin"
     level: 1
     os: [windows]
     special: recycle_bin
@@ -35,10 +35,10 @@ rules:
     risk: low
     default_on: true
     action: delete
-    impact: "File trong thùng rác sẽ mất vĩnh viễn. Kiểm tra kỹ trước khi dọn."
+    impact: "Files in the Recycle Bin will be gone forever. Check carefully before cleaning."
 
   - id: win_browser_cache
-    name: "Cache trình duyệt (Chrome/Edge/Brave/Cốc Cốc/Opera/Firefox)"
+    name: "Browser caches (Chrome/Edge/CocCoc/...)"
     level: 1
     os: [windows]
     paths:
@@ -60,11 +60,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Trình duyệt tải lại ảnh/file web — lần mở trang đầu chậm hơn một chút. Không mất mật khẩu/bookmark."
-    note: "Không động vào cookie / mật khẩu / bookmark"
+    impact: "Browsers re-download images and web files - first page loads a bit slower. No passwords or bookmarks lost."
+    note: "Cookies, passwords and bookmarks are untouched"
 
   - id: win_discord_cache
-    name: "Cache Discord"
+    name: "Discord cache"
     level: 1
     os: [windows]
     paths:
@@ -78,10 +78,10 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Discord tải lại ảnh/file — không mất tin nhắn."
+    impact: "Discord re-downloads images/files - no messages lost."
 
   - id: win_zalo_tmp
-    name: "File tạm Zalo (giữ nguyên tin nhắn)"
+    name: "Zalo temp files"
     level: 1
     os: [windows]
     paths: ["%LOCALAPPDATA%\\ZaloPC"]
@@ -92,11 +92,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Không mất tin nhắn. Zalo có thể tải lại một số ảnh."
-    note: "Phase 1 chỉ xóa file tạm, không xóa dữ liệu chat"
+    impact: "No messages lost. Zalo may re-download some images."
+    note: "Only temp files - chat data is untouched"
 
   - id: win_thumbnail_cache
-    name: "Thumbnail cache (Explorer)"
+    name: "Thumbnail cache"
     level: 1
     os: [windows]
     paths: ["%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer\\thumbcache_*.db"]
@@ -107,11 +107,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Windows tự tạo lại thumbnail — lần mở thư mục đầu hơi chậm."
-    note: "Windows tự tạo lại, lần mở folder đầu hơi chậm"
+    impact: "Windows rebuilds thumbnails - first folder open a bit slower."
+    note: "Windows rebuilds it; first folder open is a bit slower"
 
   - id: win_wer_queue
-    name: "Báo cáo lỗi chờ gửi (WER)"
+    name: "Windows Error Reporting queue"
     level: 1
     os: [windows]
     paths: ["%LOCALAPPDATA%\\Microsoft\\Windows\\WER\\ReportQueue"]
@@ -122,11 +122,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Chỉ là báo cáo lỗi chờ gửi — không ảnh hưởng."
+    impact: "Only pending error reports - no effect."
 
   # ------------------------- LINUX -------------------------
   - id: lin_home_cache
-    name: "Cache của user (~/.cache)"
+    name: "Home .cache"
     level: 1
     os: [linux]
     paths: ["~/.cache"]
@@ -137,11 +137,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "App tự tạo lại cache khi cần — lần mở đầu có thể chậm hơn."
-    note: "Chỉ xóa file > 1 ngày tuổi"
+    impact: "Apps rebuild cache when needed - first launch may be slower."
+    note: "Only files older than 1 day"
 
   - id: lin_tmp
-    name: "File tạm /tmp"
+    name: "/tmp (files older than 1 day)"
     level: 1
     os: [linux]
     paths: ["/tmp"]
@@ -152,10 +152,10 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Chỉ xóa file tạm cũ trên 1 ngày."
+    impact: "Only temp files older than 1 day."
 
   - id: lin_trash
-    name: "Thùng rác (Trash)"
+    name: "Trash"
     level: 1
     os: [linux]
     special: trash
@@ -163,10 +163,10 @@ rules:
     risk: low
     default_on: true
     action: delete
-    impact: "File trong thùng rác sẽ mất vĩnh viễn."
+    impact: "Files in the trash will be gone forever."
 
   - id: lin_browser_cache
-    name: "Cache trình duyệt (Chrome/Chromium/Firefox)"
+    name: "Browser caches"
     level: 1
     os: [linux]
     paths:
@@ -180,10 +180,10 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Trình duyệt tải lại ảnh/file web — lần mở trang đầu chậm hơn một chút. Không mất mật khẩu/bookmark."
+    impact: "Browsers re-download images and web files - no passwords or bookmarks lost."
 
   - id: lin_journal
-    name: "Log hệ thống journal (giữ 7 ngày gần nhất)"
+    name: "System journal (older than 7 days)"
     level: 1
     os: [linux]
     special: journal
@@ -191,12 +191,12 @@ rules:
     risk: low
     default_on: true
     action: delete
-    impact: "Chỉ xóa log hệ thống cũ hơn 7 ngày."
-    note: "Khi dọn thật sẽ chạy: journalctl --vacuum-time=7d"
+    impact: "Only system logs older than 7 days."
+    note: "Runs: journalctl --vacuum-time=7d"
 
   # ================= MỨC 2 — NÂNG CAO (cần admin) =================
   - id: win_system_temp
-    name: "Windows Temp hệ thống (C:\\Windows\\Temp)"
+    name: "Windows Temp"
     level: 2
     os: [windows]
     paths: ["%SystemRoot%\\Temp"]
@@ -207,11 +207,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Không ảnh hưởng (chỉ file cũ, bỏ qua file đang khóa)."
-    note: "Chỉ xóa file > 1 ngày tuổi, bỏ qua file đang khóa"
+    impact: "No effect (old files only, locked files skipped)."
+    note: "Only files older than 1 day; locked files are skipped"
 
   - id: win_update_cache
-    name: "Windows Update cache (SoftwareDistribution\\Download)"
+    name: "Windows Update download cache"
     level: 2
     os: [windows]
     special: update_cache
@@ -219,11 +219,11 @@ rules:
     risk: low
     default_on: true
     action: delete
-    impact: "Windows sẽ tải lại update nếu cần. An toàn."
-    note: "Tự dừng service wuauserv trước khi xóa, start lại sau"
+    impact: "Windows re-downloads updates if needed. Safe."
+    note: "Stops the wuauserv service before deleting, restarts it after"
 
   - id: win_dism_cleanup
-    name: "Dọn WinSxS (DISM StartComponentCleanup)"
+    name: "WinSxS cleanup (DISM)"
     level: 2
     os: [windows]
     special: dism_cleanup
@@ -231,11 +231,11 @@ rules:
     risk: low
     default_on: true
     action: delete
-    impact: "Công cụ chính chủ Microsoft. Không ảnh hưởng update đã cài."
-    note: "Công cụ chính chủ Microsoft, chạy vài phút"
+    impact: "Microsoft's own cleanup tool. Installed updates are unaffected."
+    note: "Microsoft's own tool; takes a few minutes"
 
   - id: win_windows_old
-    name: "Windows.old / bản cài Windows cũ"
+    name: "Windows.old (previous Windows)"
     level: 2
     os: [windows]
     paths: ["C:\\Windows.old", "C:\\$Windows.~BT", "C:\\$Windows.~WS"]
@@ -246,11 +246,11 @@ rules:
     risk: medium
     default_on: true
     action: quarantine
-    impact: "⚠️ Không thể rollback về bản Windows cũ nữa."
-    warning: "Xóa = không rollback được về bản Windows cũ"
+    impact: "You will no longer be able to roll back to the previous Windows version."
+    warning: "Deleting it means no rollback to the previous Windows"
 
   - id: win_cbs_logs
-    name: "Log CBS / Panther (có khi > 10 GB)"
+    name: "CBS logs"
     level: 2
     os: [windows]
     paths: ["%SystemRoot%\\Logs\\CBS", "%SystemRoot%\\Panther"]
@@ -261,10 +261,10 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Chỉ là file log — không ảnh hưởng hệ thống."
+    impact: "Just log files - no system effect."
 
   - id: win_dumps
-    name: "Dump khi crash (Minidump + MEMORY.DMP)"
+    name: "Crash dump files"
     level: 2
     os: [windows]
     paths: ["%SystemRoot%\\Minidump\\*.dmp", "%SystemRoot%\\MEMORY.DMP"]
@@ -275,11 +275,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Mất file debug khi crash — chỉ cần nếu bạn định phân tích lỗi."
-    note: "MEMORY.DMP thường to bằng dung lượng RAM"
+    impact: "Loses crash debug files - only needed if you analyze crashes."
+    note: "MEMORY.DMP is usually as large as your RAM"
 
   - id: win_font_icon_cache
-    name: "Font/Icon cache (xóa để Windows rebuild)"
+    name: "Font/icon cache"
     level: 2
     os: [windows]
     paths:
@@ -292,11 +292,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Windows rebuild lại — màn hình có thể nháy lúc rebuild."
-    note: "Màn hình có thể nháy lúc rebuild, tự hết"
+    impact: "Windows rebuilds it - the screen may flicker during rebuild."
+    note: "Screen may flicker during rebuild, goes away by itself"
 
   - id: win_orphan_apps
-    name: "Dữ liệu mồ côi của app đã gỡ (AppData)"
+    name: "Leftover data of uninstalled apps"
     level: 2
     os: [windows]
     special: orphan_apps
@@ -304,11 +304,11 @@ rules:
     risk: medium
     default_on: false
     action: quarantine
-    impact: "Thư mục của app đã gỡ — kiểm tra kỹ danh sách trước khi dọn."
-    note: "Chỉ là gợi ý (độ tin cậy high/medium) — bạn tick từng mục. Mặc định KHÔNG tick"
+    impact: "Folders belonging to removed apps - review the list before cleaning."
+    note: "Suggestions only (high/medium confidence) - tick items yourself. Off by default"
 
   - id: win_patchcache
-    name: "Installer patch cache cũ ($PatchCache$)"
+    name: "Old installer patches"
     level: 2
     os: [windows]
     paths: ["%SystemRoot%\\Installer\\$PatchCache$"]
@@ -319,11 +319,11 @@ rules:
     risk: medium
     default_on: false
     action: quarantine
-    impact: "Chỉ xóa patch .msp cũ trên 30 ngày. Không động vào .msi gốc."
-    note: "Không bao giờ xóa file .msi gốc — chỉ .msp cũ > 30 ngày"
+    impact: "Only .msp patches older than 30 days. Original .msi files are untouched."
+    note: "Never deletes original .msi files - only .msp older than 30 days"
 
   - id: win_delivery_opt
-    name: "Delivery Optimization files"
+    name: "Delivery Optimization cache"
     level: 2
     os: [windows]
     paths:
@@ -336,11 +336,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Windows tải lại nếu cần chia sẻ update."
+    impact: "Windows re-downloads it if update sharing is needed."
 
   # ================= MỨC 3 — CHUYÊN SÂU (admin + xác nhận) =================
   - id: win_deep_pattern
-    name: "Quét pattern rác toàn ổ C (*.tmp, *.log, *.bak...)"
+    name: "Deep junk patterns on C:"
     level: 3
     os: [windows]
     paths: ["C:\\"]
@@ -351,11 +351,11 @@ rules:
     risk: medium
     default_on: true
     action: quarantine
-    impact: "Chỉ xóa file rác theo pattern (*.tmp, *.log...) — đã loại trừ thư mục hệ thống."
-    note: "Tự bỏ qua System32/WinSxS/Program Files/Documents... Quét có thể mất vài phút"
+    impact: "Only junk matched by pattern (*.tmp, *.log...) - system folders excluded."
+    note: "Skips System32/WinSxS/Program Files/Documents... Scan may take a while"
 
   - id: win_dev_caches
-    name: "Cache dev (npm/yarn/pip/cargo/gradle/NuGet)"
+    name: "Developer caches (npm/pip/cargo/...)"
     level: 3
     os: [windows]
     paths:
@@ -372,11 +372,11 @@ rules:
     risk: low
     default_on: false
     action: quarantine
-    impact: "Tool dev sẽ tải lại cache — lần build đầu tiên chậm hơn."
-    note: "OPT-IN: chỉ bật nếu bạn là dev. Xóa xong lần build đầu sẽ chậm lại"
+    impact: "Dev tools re-download caches - first build is slower."
+    note: "OPT-IN: only enable if you are a developer. First build after cleaning is slower"
 
   - id: win_docker
-    name: "Docker: image/container/network không dùng"
+    name: "Unused Docker data"
     level: 3
     os: [windows, linux]
     special: docker_prune
@@ -384,11 +384,11 @@ rules:
     risk: medium
     default_on: false
     action: delete
-    impact: "Image/container không dùng sẽ mất — phải pull/build lại."
-    note: "Không xóa volumes (dữ liệu container)"
+    impact: "Unused images/containers are lost - pull/build again."
+    note: "Volumes (container data) are not deleted"
 
   - id: win_hibernate
-    name: "🔴 Tắt Hibernate (xóa hiberfil.sys)"
+    name: "Disable Hibernate (removes hiberfil.sys)"
     level: 3
     os: [windows]
     special: hibernate_off
@@ -396,11 +396,11 @@ rules:
     risk: high
     default_on: false
     action: delete
-    impact: "🔴 Mất chế độ Hibernate và Fast Startup."
-    warning: "Mất Hibernate + Fast Startup. Chỉ làm nếu bạn không bao giờ dùng Hibernate"
+    impact: "You lose Hibernate mode and Fast Startup."
+    warning: "Loses Hibernate + Fast Startup. Only do this if you never use Hibernate"
 
   - id: win_old_restore_points
-    name: "🔴 Xóa restore point cũ (giữ mới nhất)"
+    name: "Old restore points (keep newest)"
     level: 3
     os: [windows]
     special: old_restore_points
@@ -408,11 +408,11 @@ rules:
     risk: high
     default_on: false
     action: delete
-    impact: "🔴 Giảm khả năng rollback hệ thống khi có sự cố."
-    warning: "Giảm khả năng rollback hệ thống khi có sự cố"
+    impact: "Less ability to roll back the system after a problem."
+    warning: "Reduces the ability to roll back the system after a failure"
 
   - id: win_dism_resetbase
-    name: "🔴 DISM ResetBase (dọn WinSxS triệt để)"
+    name: "DISM ResetBase"
     level: 3
     os: [windows]
     special: dism_resetbase
@@ -420,12 +420,12 @@ rules:
     risk: high
     default_on: false
     action: delete
-    impact: "🔴 KHÔNG undo được — không gỡ được update Windows đã cài."
-    warning: "KHÔNG UNDO ĐƯỢC: sau đó không gỡ được update Windows đã cài"
+    impact: "CANNOT be undone - installed Windows updates can't be removed afterwards."
+    warning: "CANNOT BE UNDONE: installed Windows updates can't be removed afterwards"
 
   # ================= LINUX mức 2 =================
   - id: lin_apt_cache
-    name: "Cache apt (.deb đã tải)"
+    name: "APT package cache"
     level: 2
     os: [linux]
     special: apt_clean
@@ -433,10 +433,10 @@ rules:
     risk: low
     default_on: true
     action: delete
-    impact: "apt sẽ tải lại file .deb khi cần cài đặt."
+    impact: "apt re-downloads .deb files when needed."
 
   - id: lin_snap_old
-    name: "Bản snap cũ (disabled)"
+    name: "Old snap revisions"
     level: 2
     os: [linux]
     special: snap_old
@@ -444,10 +444,10 @@ rules:
     risk: low
     default_on: true
     action: delete
-    impact: "Chỉ gỡ bản snap cũ đã bị vô hiệu hóa."
+    impact: "Only disabled old snap revisions."
 
   - id: lin_var_log
-    name: "Log cũ trong /var/log"
+    name: "Old system logs"
     level: 2
     os: [linux]
     paths: ["/var/log"]
@@ -458,10 +458,10 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Chỉ xóa log đã nén hoặc cũ."
+    impact: "Only compressed or old logs."
 
   - id: lin_old_kernels
-    name: "Kernel Linux cũ (giữ bản đang chạy + 2 bản mới nhất)"
+    name: "Old kernels"
     level: 2
     os: [linux]
     special: old_kernels
@@ -469,11 +469,11 @@ rules:
     risk: medium
     default_on: false
     action: delete
-    impact: "Không bao giờ gỡ kernel đang chạy. Luôn giữ 2 bản mới nhất dự phòng."
-    note: "Không bao giờ gỡ kernel đang chạy"
+    impact: "Never removes the running kernel. Always keeps the 2 newest as backup."
+    note: "Never removes the running kernel"
 
   - id: lin_orphan_apps
-    name: "Dữ liệu mồ côi của app đã gỡ (~/.local/share, ~/.config)"
+    name: "Leftover data of uninstalled apps"
     level: 2
     os: [linux]
     special: orphan_apps
@@ -481,12 +481,12 @@ rules:
     risk: medium
     default_on: false
     action: quarantine
-    impact: "Thư mục của app đã gỡ — kiểm tra kỹ danh sách trước khi dọn."
-    note: "Chỉ là gợi ý — mặc định KHÔNG tick"
+    impact: "Folders belonging to removed apps - review the list before cleaning."
+    note: "Suggestions only - off by default"
 
   # ================= LINUX mức 3 =================
   - id: lin_deep_pattern
-    name: "Quét pattern rác trong thư mục home"
+    name: "Deep junk patterns in home folder"
     level: 3
     os: [linux]
     paths: ["~"]
@@ -497,11 +497,11 @@ rules:
     risk: medium
     default_on: true
     action: quarantine
-    impact: "Chỉ xóa file rác theo pattern — đã loại trừ Documents/Desktop/Downloads."
-    note: "Tự bỏ qua Documents/Desktop/Downloads"
+    impact: "Only junk matched by pattern - Documents/Desktop/Downloads excluded."
+    note: "Skips Documents/Desktop/Downloads"
 
   - id: lin_dev_caches
-    name: "Cache dev (npm/yarn/pip/cargo/gradle)"
+    name: "Developer caches (npm/pip/cargo/...)"
     level: 3
     os: [linux]
     paths:
@@ -517,12 +517,12 @@ rules:
     risk: low
     default_on: false
     action: quarantine
-    impact: "Tool dev sẽ tải lại cache — lần build đầu tiên chậm hơn."
-    note: "OPT-IN: chỉ bật nếu bạn là dev"
+    impact: "Dev tools re-download caches - first build is slower."
+    note: "OPT-IN: only enable if you are a developer"
 
   # ============ BỔ SUNG: vị trí dọn giá trị cao (an toàn) ============
   - id: win_inetcache
-    name: "Cache Internet Explorer/Edge cũ (INetCache)"
+    name: "Old IE/Edge web cache (INetCache)"
     level: 1
     os: [windows]
     paths: ["%LOCALAPPDATA%\\Microsoft\\Windows\\INetCache"]
@@ -533,10 +533,10 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Không ảnh hưởng — chỉ là file web tạm."
+    impact: "No effect - just old web temp files."
 
   - id: win_d3d_cache
-    name: "DirectX Shader Cache (D3DSCache)"
+    name: "DirectX shader cache (D3DSCache)"
     level: 1
     os: [windows]
     paths: ["%LOCALAPPDATA%\\D3DSCache"]
@@ -547,10 +547,10 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Game/app sẽ build lại shader — lần chạy đầu có thể hơi chậm."
+    impact: "Games/apps rebuild shaders - first run may be slightly slower."
 
   - id: win_teams_cache
-    name: "Cache Microsoft Teams"
+    name: "Microsoft Teams cache"
     level: 1
     os: [windows]
     paths:
@@ -565,10 +565,10 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Teams tải lại dữ liệu — lần mở đầu chậm hơn, không cần đăng nhập lại."
+    impact: "Teams re-downloads data - first launch slower, no need to sign in again."
 
   - id: win_spotify_cache
-    name: "Cache Spotify (giữ nhạc offline)"
+    name: "Spotify cache (keeps offline music)"
     level: 1
     os: [windows]
     paths:
@@ -581,11 +581,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    note: "Không động vào thư mục Storage (nhạc offline)"
-    impact: "Spotify tải lại ảnh bìa — KHÔNG mất nhạc đã tải offline."
+    note: "Does not touch the Storage folder (offline music)"
+    impact: "Spotify re-downloads cover art - offline music is NOT deleted."
 
   - id: win_defender_history
-    name: "Lịch sử quét Windows Defender"
+    name: "Windows Defender scan history"
     level: 2
     os: [windows]
     paths: ["%PROGRAMDATA%\\Microsoft\\Windows Defender\\Scans\\History"]
@@ -596,11 +596,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    note: "Thư mục này thường phình to theo thời gian"
-    impact: "Chỉ mất lịch sử quét cũ — không ảnh hưởng khả năng bảo vệ."
+    note: "This folder often grows large over time"
+    impact: "Only old scan history is lost - protection is unaffected."
 
   - id: win_driver_installers
-    name: "Bộ cài driver còn sót (C:\\NVIDIA, C:\\AMD, C:\\Intel)"
+    name: "Leftover driver installers (C:/NVIDIA, C:/AMD, C:/Intel)"
     level: 2
     os: [windows]
     paths: ["C:\\NVIDIA", "C:\\AMD", "C:\\Intel"]
@@ -611,11 +611,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    note: "Thư mục giải nén của bộ cài driver, thường vài GB"
-    impact: "An toàn nếu driver đang chạy ổn định. Cần cài lại thì tải lại từ hãng."
+    note: "Extracted driver installer folders, often several GB"
+    impact: "Safe if your drivers run fine. Re-download from the vendor to reinstall."
 
   - id: win_msoffice_cache
-    name: "Cache cài đặt Office (MSOCache)"
+    name: "Office install cache (MSOCache)"
     level: 2
     os: [windows]
     paths: ["C:\\MSOCache"]
@@ -626,10 +626,10 @@ rules:
     risk: medium
     default_on: false
     action: quarantine
-    impact: "⚠️ Không sửa/cài lại Office offline được nữa nếu thiếu file gốc."
+    impact: "You will not be able to repair Office offline without the original files."
 
   - id: win_office_filecache
-    name: "Cache file Office/OneDrive (OfficeFileCache)"
+    name: "Office/OneDrive file cache"
     level: 2
     os: [windows]
     paths: ["%LOCALAPPDATA%\\Microsoft\\Office\\16.0\\OfficeFileCache"]
@@ -640,10 +640,10 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    impact: "Office/OneDrive đồng bộ lại khi mở file."
+    impact: "Office/OneDrive re-syncs when you open files."
 
   - id: win_steam_temp
-    name: "File tạm Steam (đang tải dở, temp)"
+    name: "Steam temp files (unfinished downloads)"
     level: 2
     os: [windows]
     paths:
@@ -658,11 +658,11 @@ rules:
     risk: low
     default_on: true
     action: quarantine
-    note: "Không động vào game đã cài (common)"
-    impact: "Xóa file đang tải dở và file tạm của Steam."
+    note: "Installed games (common folder) are untouched"
+    impact: "Removes unfinished downloads and temp files."
 
   - id: win_itunes_backup
-    name: "Backup iPhone/iPad (iTunes)"
+    name: "iPhone/iPad backups (iTunes)"
     level: 2
     os: [windows]
     paths: ["%APPDATA%\\Apple Computer\\MobileSync\\Backup"]
@@ -673,5 +673,5 @@ rules:
     risk: medium
     default_on: false
     action: quarantine
-    note: "Backup iTunes thường rất to (hàng chục GB)"
-    impact: "⚠️ Xóa bản backup iPhone/iPad — chỉ xóa khi chắc chắn không cần."
+    note: "iTunes backups are often huge (tens of GB)"
+    impact: "Deletes iPhone/iPad backups - only if you are sure you don't need them."

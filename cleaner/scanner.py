@@ -1,7 +1,6 @@
-"""Quét dry-run: chỉ TÍNH dung lượng, KHÔNG xóa bất cứ gì.
+"""Dry-run scan: only COUNTS size, deletes NOTHING.
 
-Phase 1: chỉ quét thử mức 1. Chức năng dọn thật + khu cách ly
-sẽ có ở Phase 2 (kèm GUI, restore point, action log).
+Level 1 dry-run scan. Real cleanup + quarantine are handled by clean.py.
 """
 import ctypes
 import fnmatch
@@ -13,6 +12,9 @@ import time
 
 from cleaner import engine
 from safety import protected
+
+
+MAX_PATHS = 200_000  # cap to avoid RAM blowup on whole-drive scans
 
 
 def _match(name: str, patterns: list, exclude: list) -> bool:
@@ -31,9 +33,9 @@ def _old_enough(path: str, min_age_days: int) -> bool:
 
 
 def scan_rule(rule: dict, collect_paths: bool = False) -> dict:
-    """Trả về {rule, size, count, samples[], paths?[], error?}.
+    """Returns {rule, size, count, samples[], paths?[], error?}.
 
-    collect_paths=True: trả thêm full danh sách file (dùng khi dọn thật).
+    collect_paths=True: also returns the full file list (used for real cleanup).
     """
     if rule.get("special"):
         return _scan_special(rule)
@@ -42,33 +44,51 @@ def scan_rule(rule: dict, collect_paths: bool = False) -> dict:
     patterns = rule.get("patterns", ["*"])
     exclude = rule.get("exclude", [])
     min_age = rule.get("min_age_days", 0)
+    truncated = False
+
+    def consider(fp: str) -> bool:
+        """Process one file. Returns False when the path cap is hit."""
+        nonlocal size, count, truncated
+        try:
+            if not _match(os.path.basename(fp), patterns, exclude):
+                return True
+            if not _old_enough(fp, min_age):
+                return True
+            size += os.path.getsize(fp)
+            count += 1
+            if len(samples) < 5:
+                samples.append(fp)
+            if paths is not None:
+                if len(paths) >= MAX_PATHS:
+                    truncated = True
+                    return False
+                paths.append(fp)
+            return True
+        except OSError:
+            return True  # locked / vanished mid-scan -> skip
+
     for base in engine.resolve_paths(rule):
+        if truncated:
+            break
         if protected.is_protected_path(base):
             continue
-        targets = [base] if os.path.isfile(base) else []
-        if not targets:
+        if os.path.isfile(base):
+            consider(base)
+        else:
             for root, _dirs, filenames in os.walk(base, onerror=lambda e: None):
                 if protected.is_protected_path(root):
                     continue
                 for fn in filenames:
-                    targets.append(os.path.join(root, fn))
-        for fp in targets:
-            try:
-                if not _match(os.path.basename(fp), patterns, exclude):
+                    if not consider(os.path.join(root, fn)):
+                        break
+                else:
                     continue
-                if not _old_enough(fp, min_age):
-                    continue
-                size += os.path.getsize(fp)
-                count += 1
-                if len(samples) < 5:
-                    samples.append(fp)
-                if paths is not None:
-                    paths.append(fp)
-            except OSError:
-                continue  # file bị khóa / biến mất giữa chừng -> bỏ qua
+                break
     out = {"rule": rule, "size": size, "count": count, "samples": samples}
     if paths is not None:
         out["paths"] = paths
+    if truncated:
+        out["truncated"] = True
     return out
 
 
@@ -106,7 +126,7 @@ def _scan_special(rule: dict) -> dict:
         except Exception:  # noqa: BLE001
             pass
         return {"rule": rule, "size": 0, "count": 0, "samples": [],
-                "error": "Không đọc được Recycle Bin"}
+                "error": "Could not read Recycle Bin"}
     if kind == "trash":
         p = os.path.expanduser("~/.local/share/Trash/files")
         if os.path.isdir(p):
@@ -123,16 +143,16 @@ def _scan_special(rule: dict) -> dict:
                 return {"rule": rule,
                         "size": int(float(m.group(1)) * mult),
                         "count": 0, "samples": [],
-                        "note": "Khi dọn thật: journalctl --vacuum-time=7d"}
+                        "note": "On real clean: journalctl --vacuum-time=7d"}
         except Exception:  # noqa: BLE001
             pass
         return {"rule": rule, "size": 0, "count": 0, "samples": []}
     return {"rule": rule, "size": 0, "count": 0, "samples": [],
-            "error": f"special '{kind}' chưa được hỗ trợ"}
+            "error": f"special '{kind}' not supported"}
 
 
 def _scan_special2(rule: dict) -> dict:
-    """Các special của Phase 3 (mức 2/3)."""
+    """Special rules (levels 2/3)."""
     from cleaner import sysclean, dism, orphan_detector
     kind = rule["special"]
     if kind == "update_cache":
@@ -142,10 +162,10 @@ def _scan_special2(rule: dict) -> dict:
         return {"rule": rule, "size": s, "count": c, "samples": []}
     if kind == "dism_cleanup":
         return {"rule": rule, "size": 0, "count": 0, "samples": [],
-                "note": "Chạy DISM StartComponentCleanup (mất vài phút)"}
+                "note": "Runs DISM StartComponentCleanup (takes a few minutes)"}
     if kind == "dism_resetbase":
         return {"rule": rule, "size": 0, "count": 0, "samples": [],
-                "note": "DISM /ResetBase — KHÔNG undo được"}
+                "note": "DISM /ResetBase — CANNOT be undone"}
     if kind == "orphan_apps":
         orphans = orphan_detector.detect_orphans()
         total = sum(o["size"] for o in orphans)
@@ -153,31 +173,31 @@ def _scan_special2(rule: dict) -> dict:
         samples = [f"[{o['confidence']}] {o['path']}" for o in orphans[:5]]
         return {"rule": rule, "size": total, "count": len(orphans),
                 "samples": samples, "orphans": orphans,
-                "note": f"{len(orphans)} thư mục nghi mồ côi ({hi} độ tin cậy cao)"}
+                "note": f"{len(orphans)} suspected orphan folders ({hi} high confidence)"}
     if kind == "hibernate_off":
         s = sysclean.hiberfil_size()
         return {"rule": rule, "size": s, "count": 1 if s else 0,
                 "samples": [],
-                "note": "Không tìm thấy hiberfil.sys (Hibernate đang tắt)" if not s else ""}
+                "note": "hiberfil.sys not found (Hibernate is off)" if not s else ""}
     if kind == "old_restore_points":
         n = sysclean.count_restore_points()
         return {"rule": rule, "size": 0, "count": n, "samples": [],
-                "note": f"Hiện có {n} restore point (sẽ giữ lại mới nhất)"}
+                "note": f"{n} restore point(s) found (newest will be kept)"}
     if kind == "docker_prune":
         return {"rule": rule, "size": 0, "count": 0, "samples": [],
-                "note": "docker system prune (không xóa volumes)"}
+                "note": "docker system prune (volumes kept)"}
     if kind == "apt_clean":
         return {"rule": rule, "size": sysclean.apt_cache_size(),
                 "count": 0, "samples": []}
     if kind == "snap_old":
         return {"rule": rule, "size": 0, "count": 0, "samples": [],
-                "note": "Gỡ các bản snap 'disabled'"}
+                "note": "Removes disabled snap revisions"}
     if kind == "old_kernels":
         ks = sysclean.old_kernels_info()
         return {"rule": rule, "size": 0, "count": len(ks), "samples": ks,
-                "note": "Giữ kernel đang chạy + 2 bản mới nhất"}
+                "note": "Keeps the running kernel + 2 newest"}
     return {"rule": rule, "size": 0, "count": 0, "samples": [],
-            "error": f"special '{kind}' chưa được hỗ trợ"}
+            "error": f"special '{kind}' not supported"}
 
 
 def scan_all(level: int) -> list:

@@ -1,10 +1,11 @@
-"""Đảm bảo chỉ 1 bản CleanBoost GUI chạy tại 1 thời điểm.
+"""Ensure only one CleanBoost GUI instance runs at a time.
 
-Kể cả khi bản cũ chạy quyền User và bản mới chạy quyền Admin (hoặc ngược
-lại): khi phát hiện bản cũ, app hỏi user có muốn tắt bản cũ để mở bản mới
-không. Chọn "Có" -> tắt bản cũ, mở bản mới. Chọn "Không" -> thoát.
+Even when the old instance runs as User and the new one as Admin (or vice
+versa): when an old instance is found, the app asks whether to close the
+old one and open the new one. "Yes" closes the old and opens the new;
+"No" exits.
 
-Cơ chế: lock file chứa PID trong thư mục dữ liệu của user hiện tại.
+Mechanism: a lock file holding the PID in the current user's data dir.
 """
 import atexit
 import os
@@ -23,33 +24,42 @@ def _lock_path() -> str:
 
 
 def _read_lock():
+    """Returns (pid, create_time) or (None, None)."""
     try:
         with open(_lock_path(), encoding="utf-8") as f:
-            pid = int(f.read().strip())
-            return pid if pid > 0 else None
-    except (OSError, ValueError):
-        return None
+            parts = f.read().strip().split()
+            pid = int(parts[0])
+            ctime = float(parts[1]) if len(parts) > 1 else None
+            return (pid, ctime) if pid > 0 else (None, None)
+    except (OSError, ValueError, IndexError):
+        return None, None
 
 
 def _write_lock(pid: int):
+    import psutil
+    try:
+        ctime = psutil.Process(pid).create_time()
+    except Exception:  # noqa: BLE001
+        ctime = 0
     try:
         with open(_lock_path(), "w", encoding="utf-8") as f:
-            f.write(str(pid))
+            f.write(f"{pid} {ctime}")
     except OSError:
         pass
 
 
 def _clear_lock():
     try:
-        if _read_lock() == os.getpid():
+        pid, _ctime = _read_lock()
+        if pid == os.getpid():
             os.remove(_lock_path())
     except OSError:
         pass
 
 
 def _looks_like_us(pid: int):
-    """True: chắc chắn là CleanBoost. False: chắc chắn không phải.
-    None: không đọc được thông tin (thường là process quyền cao hơn)."""
+    """True: definitely CleanBoost. False: definitely not.
+    None: cannot read info (usually a higher-privilege process)."""
     import psutil
     try:
         p = psutil.Process(pid)
@@ -67,24 +77,24 @@ def _looks_like_us(pid: int):
 
 
 def _priv_hint(pid: int) -> str:
-    """Đoán quyền của process cũ (để hiển thị cho user)."""
+    """Guess the old process' rights (to show the user)."""
     import psutil
     try:
         psutil.Process(pid).cmdline()
         return "User"
     except psutil.AccessDenied:
-        return "Admin (có thể)"
+        return "Admin (likely)"
     except psutil.NoSuchProcess:
         return "?"
 
 
 def _kill_old(pid: int):
-    """Trả về (ok, message)."""
+    """Returns (ok, message)."""
     import psutil
     try:
         p = psutil.Process(pid)
     except psutil.NoSuchProcess:
-        return True, "Bản cũ đã tự thoát."
+        return True, "The old instance already exited."
     try:
         p.terminate()
         try:
@@ -92,29 +102,37 @@ def _kill_old(pid: int):
         except psutil.TimeoutExpired:
             p.kill()
             p.wait(timeout=6)
-        return True, "Đã tắt bản cũ."
+        return True, "Old instance closed."
     except psutil.AccessDenied:
-        return False, ("Không thể tắt bản cũ vì nó đang chạy với quyền cao hơn "
-                       "(Admin).\nHãy chuột phải bản mới -> Run as administrator, "
-                       "hoặc tắt bản cũ thủ công rồi mở lại.")
+        return False, ("Cannot close the old instance: it runs with higher rights "
+                       "(Admin).\nRight-click the new launcher -> Run as administrator, "
+                       "or close the old instance manually first.")
     except psutil.NoSuchProcess:
-        return True, "Bản cũ đã tự thoát."
+        return True, "The old instance already exited."
     except Exception as e:  # noqa: BLE001
-        return False, f"Không tắt được bản cũ: {e}"
+        return False, f"Could not close the old instance: {e}"
 
 
 def ensure_single_instance() -> bool:
-    """Kiểm tra trước khi mở GUI.
+    """Check before opening the GUI.
 
-    Trả về True nếu được chạy tiếp, False nếu phải thoát ngay.
-    Tự hiện hộp thoại hỏi user khi phát hiện bản cũ.
+    Returns True to continue, False to exit immediately.
+    Shows a dialog asking the user when an old instance is found.
     """
     import psutil
     import tkinter as tk
     from tkinter import messagebox
 
     me = os.getpid()
-    other = _read_lock()
+    other, other_ctime = _read_lock()
+    if other and other != me and psutil.pid_exists(other):
+        # Anti PID-reuse: create_time must match the lock write time
+        try:
+            cur_ctime = psutil.Process(other).create_time()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            cur_ctime = None
+        if other_ctime and cur_ctime and abs(cur_ctime - other_ctime) > 2:
+            other = None  # PID was reused -> stale lock, ignore
     if other and other != me and psutil.pid_exists(other):
         looks = _looks_like_us(other)
         if looks is not False:
@@ -123,18 +141,18 @@ def ensure_single_instance() -> bool:
             root.withdraw()
             try:
                 ans = messagebox.askyesno(
-                    "CleanBoost đang chạy",
-                    f"Đã phát hiện 1 bản CleanBoost khác đang chạy\n"
-                    f"(PID {other}, quyền {priv}).\n\n"
-                    "Bạn có muốn TẮT bản cũ để mở bản mới không?\n\n"
-                    "• Có: tắt bản cũ, mở bản mới\n"
-                    "• Không: giữ bản cũ, không mở thêm",
+                    "CleanBoost is already running",
+                    f"Another CleanBoost instance is already running\n"
+                    f"(PID {other}, rights: {priv}).\n\n"
+                    "Close the old instance and open a new one?\n\n"
+                    "• Yes: close the old, open the new\n"
+                    "• No: keep the old, do not open another",
                     parent=root)
                 if not ans:
                     return False
                 ok, msg = _kill_old(other)
                 if not ok:
-                    messagebox.showerror("Không thể tắt bản cũ", msg,
+                    messagebox.showerror("Cannot close old instance", msg,
                                          parent=root)
                     return False
             finally:

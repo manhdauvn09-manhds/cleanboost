@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CleanBoost — Change History</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Arial, sans-serif; background: #0e1117; color: #e8edf7;
+         margin: 0; padding: 0; line-height: 1.6; }
+  header { background: #141926; padding: 28px 24px; border-bottom: 1px solid #2a3348; }
+  header h1 { margin: 0; font-size: 26px; }
+  header p { margin: 6px 0 0; color: #9aa7c2; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px; }
+  .version { background: #1a2030; border: 1px solid #2a3348; border-radius: 12px;
+             padding: 20px 22px; margin-bottom: 22px; }
+  .version h2 { margin: 0 0 4px; font-size: 20px; color: #4f8cff; }
+  .version .date { color: #9aa7c2; font-size: 13px; margin-bottom: 12px; }
+  .entry { margin: 10px 0; padding-left: 4px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: bold; border-radius: 6px;
+         padding: 2px 8px; margin-right: 8px; vertical-align: middle; }
+  .bug { background: #7f1d1d; color: #fff; }
+  .sec { background: #5b21b6; color: #fff; }
+  .feat { background: #065f46; color: #fff; }
+  .ux { background: #92400e; color: #fff; }
+  .why { color: #9aa7c2; font-size: 14px; margin: 4px 0 0 0; padding-left: 2px; }
+  .why::before { content: "↳ Why: "; color: #4f8cff; font-weight: bold; }
+  footer { text-align: center; color: #9aa7c2; padding: 24px; font-size: 13px; }
+  a { color: #4f8cff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧹 CleanBoost — Change History</h1>
+  <p>Every bug fix and change, with <b>what</b> was done and <b>why</b>.
+     Newest first.</p>
+</header>
+<main>
+
+<div class="version">
+  <h2>v2.3 PRO</h2>
+  <div class="date">2026-10-10 — Stability, security &amp; English UI</div>
+
+  <div class="entry">
+    <span class="tag ux">UX</span><b>Progress + no double-click on every task.</b>
+    <p class="why">Clicking a button twice used to start two background threads that could fight over the UI and hang the app. Now a global busy-guard disables a task's buttons while it runs (RAM clean, emergency, process refresh/kill, scan, clean, quarantine restore/delete/purge) and re-enables them when done. The status bar shows what is running.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag sec">Security</span><b>Protected-path check now resolves symlinks.</b>
+    <p class="why">A path like <code>C:\link</code> pointing at <code>C:\Windows\System32</code> could previously slip past the protected-path check. <code>is_protected_path()</code> now uses <code>realpath</code> so symlink tricks can never reach system folders.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag sec">Security</span><b>Quarantine restore/delete hardened against path traversal.</b>
+    <p class="why">The quarantine index (<code>index.json</code>) is local data that could be tampered with. A crafted <code>stored</code> value like <code>../../..</code> could make restore/delete touch files outside quarantine. All three operations now verify the resolved path stays inside the quarantine root.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag sec">Security</span><b>Single-instance kill is immune to PID reuse.</b>
+    <p class="why">The lock file stored only a PID. If the old instance exited and the OS reused that PID for another process, "close old instance" could kill an innocent process. The lock now stores the process creation time too, and the PID is only killed when the creation time matches.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Deep-drive scans can no longer blow up RAM.</b>
+    <p class="why"><code>scan_rule()</code> collected every matched path into two full in-memory lists with no cap — a whole-drive pattern scan could consume gigabytes and freeze the app. Scanning is now streaming (no intermediate full list) and the collected path list is capped at 200,000 per rule; the UI notes when the cap is hit.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>Self-healing launchers — no more re-running setup after <code>git pull</code>.</b>
+    <p class="why">Previously, pulling new code with new dependencies (e.g. Pillow) required manually re-running <code>setup_windows.bat</code>. New <code>check_env.py</code> hashes <code>requirements.txt</code> and auto-installs on change; every launcher (<code>run_cleanboost.bat</code>, admin, CLI) and <code>git_pull.bat</code> calls it. First-time setup still needs <code>setup_windows.bat</code> once.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag ux">UX</span><b>Entire app switched to English.</b>
+    <p class="why">Vietnamese text had font rendering problems in the UI. All GUI strings, CLI output, rule names/impacts/notes/warnings, dialogs, batch files and the manual are now in clear English. New manual: <code>USER_MANUAL.md</code> (the Help <b>?</b> button reads it).</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>This changelog (<code>history.html</code>).</b>
+    <p class="why">Every fix/change from now on is recorded here with what was done and why, so nothing gets lost between versions.</p>
+  </div>
+</div>
+
+<div class="version">
+  <h2>v2.2 PRO</h2>
+  <div class="date">2026-10-10</div>
+  <div class="entry"><span class="tag feat">Feature</span><b>Single-instance guard</b><p class="why">Two GUIs running at once confused users; the app now detects the old instance and asks whether to close it.</p></div>
+  <div class="entry"><span class="tag bug">Bug fix</span><b>"Delete" on orphaned-app data actually deletes now</b><p class="why">The orphan special-case ignored the permanent flag and always quarantined, so ~7 GB of "deleted" data never freed disk space.</p></div>
+  <div class="entry"><span class="tag ux">UX</span><b>Quarantine multi-select</b> — extended selection mode, Ctrl+A, "Select all" button.<p class="why">Restoring/deleting dozens of items one by one was painful.</p></div>
+  <div class="entry"><span class="tag ux">UX</span><b>All popups modal &amp; centered</b> (transient + grab_set + parent).<p class="why">Dialogs used to appear behind the main window or off-center.</p></div>
+  <div class="entry"><span class="tag ux">UX</span><b>Light/dark theme toggle</b> (persisted), Vietnamese-safe font fallbacks, new logo, footer credit.<p class="why">Readability and a more professional look.</p></div>
+  <div class="entry"><span class="tag feat">Feature</span><b><code>git_pull.bat</code> / <code>git_push.bat</code></b> one-click sync scripts.</div>
+</div>
+
+<div class="version">
+  <h2>v2.1 PRO</h2>
+  <div class="date">2026-10-10</div>
+  <div class="entry"><span class="tag bug">Bug fix</span><b>Honest freed-space reporting</b><p class="why">Cleaning ~7 GB of orphan data showed no new free space in Explorer — files were only moved to quarantine on the same drive. The engine now measures real freed space from the drive before/after, and the UI separates "actually freed" from "sitting in quarantine".</p></div>
+  <div class="entry"><span class="tag ux">UX</span><b>Delete-first workflow</b> — the main button deletes for real; quarantine is the safe secondary option.<p class="why">The old quarantine-first flow misled users about freed space.</p></div>
+  <div class="entry"><span class="tag feat">Feature</span><b>Impact notes on all 45 rules + 10 new high-value Windows rules</b> (Defender history, driver installers, Teams/Spotify caches, MSOCache, iTunes backups, …).<p class="why">Users need to know what deleting each group actually does before confirming.</p></div>
+  <div class="entry"><span class="tag ux">UX</span><b>Pro UI redesign</b> — sidebar, ring gauges, file-preview dialog, manual viewer.<p class="why">The old UI looked dated.</p></div>
+  <div class="entry"><span class="tag feat">Feature</span><b>Source pushed to GitHub</b> (<code>manhdauvn09-manhds/cleanboost</code>).<p class="why">One-click updates via <code>git pull</code> instead of ZIP files.</p></div>
+</div>
+
+<div class="version">
+  <h2>v2.0 — Phase 4</h2>
+  <div class="date">2026-10-10</div>
+  <div class="entry"><span class="tag feat">Feature</span>Auto-clean, Task Scheduler/cron registration, RAM/disk monitor with popup alerts, Windows launcher BATs, first ZIP package.</div>
+</div>
+
+<div class="version">
+  <h2>v1.x — Phases 1–3</h2>
+  <div class="date">2026-10-10</div>
+  <div class="entry"><span class="tag feat">Feature</span>Phase 1: CLI (status/top/kill/freeram/scan). Phase 2: CustomTkinter GUI + real cleanup + 14-day quarantine + restore points + audit log. Phase 3: level 2/3 rules, orphan detector, DISM, system-clean specials.</div>
+</div>
+
+</main>
+<footer>
+  © copy by Dau Sy Manh — CleanBoost · This file is updated with every fix and change.
+</footer>
+</body>
+</html>

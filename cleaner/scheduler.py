@@ -1,6 +1,6 @@
-"""Đăng ký dọn tự động định kỳ.
+"""Register automatic periodic cleanup.
 
-Windows: Task Scheduler (schtasks) — mỗi Chủ nhật 03:00.
+Windows: Task Scheduler (schtasks) — every Sunday 03:00.
 Linux: cron — 0 3 * * 0.
 """
 import os
@@ -17,15 +17,15 @@ def _root() -> str:
 
 
 def install():
-    """Trả về (ok, message). Không bao giờ raise."""
+    """Returns (ok, message). Never raises."""
     try:
         if sys.platform == "win32":
             return _install_windows()
         return _install_linux()
     except FileNotFoundError as e:
-        return False, f"Thiếu công cụ hệ thống: {e.filename} — hãy cài cron."
+        return False, f"Missing system tool: {e.filename} — please install cron."
     except Exception as e:  # noqa: BLE001
-        return False, f"Lỗi: {e}"
+        return False, f"Error: {e}"
 
 
 def remove():
@@ -34,9 +34,9 @@ def remove():
             return _remove_windows()
         return _remove_linux()
     except FileNotFoundError as e:
-        return False, f"Thiếu công cụ hệ thống: {e.filename}."
+        return False, f"Missing system tool: {e.filename}."
     except Exception as e:  # noqa: BLE001
-        return False, f"Lỗi: {e}"
+        return False, f"Error: {e}"
 
 
 def status():
@@ -45,16 +45,16 @@ def status():
             r = subprocess.run(["schtasks", "/Query", "/TN", TASK_NAME],
                                capture_output=True, text=True)
             if r.returncode == 0:
-                return True, f"Đã đăng ký: {TASK_NAME} (Task Scheduler)."
-            return False, "Chưa đăng ký lịch dọn tự động."
+                return True, f"Registered: {TASK_NAME} (Task Scheduler)."
+            return False, "No automatic schedule registered."
         r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
         if r.returncode == 0 and "auto_clean.py" in r.stdout:
-            return True, "Đã đăng ký lịch dọn tự động trong cron."
-        return False, "Chưa đăng ký lịch dọn tự động."
+            return True, "Automatic cleanup scheduled in cron."
+        return False, "No automatic schedule registered."
     except FileNotFoundError:
-        return False, "Chưa đăng ký (không tìm thấy cron)."
+        return False, "Not registered (cron not found)."
     except Exception as e:  # noqa: BLE001
-        return False, f"Lỗi: {e}"
+        return False, f"Error: {e}"
 
 
 # ------------------------- Windows -------------------------
@@ -64,7 +64,7 @@ def _install_windows():
     pyw = os.path.join(root, ".venv", "Scripts", "pythonw.exe")
     script = os.path.join(root, "auto_clean.py")
     if not os.path.exists(pyw):
-        return False, "Chưa có .venv — chạy setup_windows.bat trước."
+        return False, "No .venv yet — run setup_windows.bat first."
     cmd = ["schtasks", "/Create", "/TN", TASK_NAME,
            "/TR", f'\\"{pyw}\\" \\"{script}\\"',
            "/SC", "WEEKLY", "/D", "SUN", "/ST", "03:00", "/F"]
@@ -72,19 +72,19 @@ def _install_windows():
         cmd += ["/RL", "HIGHEST"]
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode == 0:
-        extra = " (quyền cao nhất)" if privilege.is_admin() else \
-                " (chạy lại bằng Admin để dọn được chỗ cần quyền hệ thống)"
-        return True, f"Đã đăng ký dọn tự động mỗi Chủ nhật 03:00{extra}."
+        extra = " (highest privileges)" if privilege.is_admin() else \
+                " (re-run as Admin to clean system areas)"
+        return True, f"Automatic cleanup scheduled every Sunday 03:00{extra}."
     err = (r.stderr or "").strip().splitlines()
-    return False, f"schtasks thất bại: {err[0][:200] if err else r.returncode}"
+    return False, f"schtasks failed: {err[0][:200] if err else r.returncode}"
 
 
 def _remove_windows():
     r = subprocess.run(["schtasks", "/Delete", "/TN", TASK_NAME, "/F"],
                        capture_output=True, text=True)
     if r.returncode == 0:
-        return True, "Đã gỡ lịch dọn tự động."
-    return False, "Không tìm thấy lịch để gỡ."
+        return True, "Automatic schedule removed."
+    return False, "No schedule found to remove."
 
 
 # ------------------------- Linux -------------------------
@@ -97,24 +97,24 @@ def _install_linux():
     r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
     existing = r.stdout if r.returncode == 0 else ""
     if "auto_clean.py" in existing:
-        return True, "Đã có lịch dọn tự động trong cron."
+        return True, "Automatic cleanup is already in cron."
     new = (existing.rstrip() + "\n" + line + "\n") if existing.strip() \
         else line + "\n"
     p = subprocess.run(["crontab", "-"], input=new,
                        capture_output=True, text=True)
     if p.returncode == 0:
-        return True, "Đã đăng ký dọn tự động mỗi Chủ nhật 03:00 (cron)."
-    return False, f"Ghi crontab thất bại: {(p.stderr or '').strip()[:200]}"
+        return True, "Automatic cleanup scheduled every Sunday 03:00 (cron)."
+    return False, f"Failed to write crontab: {(p.stderr or '').strip()[:200]}"
 
 
 def _remove_linux():
     r = subprocess.run(["crontab", "-l"], capture_output=True, text=True)
     if r.returncode != 0:
-        return False, "Không đọc được crontab."
+        return False, "Could not read crontab."
     kept = [l for l in r.stdout.splitlines() if "auto_clean.py" not in l]
     new = "\n".join(kept) + ("\n" if kept else "")
     p = subprocess.run(["crontab", "-"], input=new,
                        capture_output=True, text=True)
     if p.returncode == 0:
-        return True, "Đã gỡ lịch dọn tự động."
-    return False, "Gỡ crontab thất bại."
+        return True, "Automatic schedule removed."
+    return False, "Failed to remove from crontab."

@@ -1,4 +1,4 @@
-"""Phát hiện dữ liệu mồ côi của app đã gỡ (orphan detector).
+"""Detect orphaned data of uninstalled apps (orphan detector).
 
 Windows: đọc registry Uninstall -> tập app đang cài (token hóa tên),
 so với thư mục trong %APPDATA% / %LOCALAPPDATA% / %ProgramData%.
@@ -8,7 +8,7 @@ Thư mục nào KHÔNG khớp app đang cài + không được đụng tới > 9
 + không có process đang chạy trỏ tới -> gắn cờ "mồ côi".
 
 Kết quả chỉ là GỢI Ý có độ tin cậy (high/medium) — luôn đi qua
-khu cách ly, và rule tương ứng mặc định KHÔNG tick.
+quarantine, and the matching rule is unticked by default.
 """
 import os
 import re

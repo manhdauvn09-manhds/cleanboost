@@ -1,6 +1,6 @@
-"""Tích hợp DISM (Windows) — dọn WinSxS bằng công cụ chính chủ Microsoft.
+"""DISM integration (Windows) — clean WinSxS with Microsoft's own tool.
 
-Cần quyền Admin. Các lệnh có thể chạy vài phút -> timeout dài.
+Needs Admin rights. Commands may run for minutes -> long timeout.
 """
 import subprocess
 import sys
@@ -16,34 +16,34 @@ def _run(args: list, timeout: int = 1800):
 
 def _check():
     if sys.platform != "win32":
-        return False, "DISM chỉ có trên Windows."
+        return False, "DISM is Windows-only."
     if not privilege.is_admin():
-        return False, "Cần quyền Admin để chạy DISM."
+        return False, "Admin rights are required to run DISM."
     return True, ""
 
 
 def component_cleanup():
-    """DISM /Online /Cleanup-Image /StartComponentCleanup — an toàn."""
+    """DISM /Online /Cleanup-Image /StartComponentCleanup — safe."""
     ok, msg = _check()
     if not ok:
         return False, msg
     try:
         rc, out = _run(["/Online", "/Cleanup-Image", "/StartComponentCleanup"])
         if rc == 0:
-            return True, "DISM StartComponentCleanup hoàn tất."
+            return True, "DISM StartComponentCleanup finished."
         tail = out.strip().splitlines()
-        return False, f"DISM thất bại: {tail[-1][:160] if tail else rc}"
+        return False, f"DISM failed: {tail[-1][:160] if tail else rc}"
     except subprocess.TimeoutExpired:
-        return False, "DISM chạy quá 30 phút — đã dừng chờ, có thể chạy lại."
+        return False, "DISM ran over 30 minutes — stopped waiting, you can retry."
     except Exception as e:  # noqa: BLE001
-        return False, f"Lỗi DISM: {e}"
+        return False, f"DISM error: {e}"
 
 
 def reset_base():
-    """DISM ... /StartComponentCleanup /ResetBase — 🔴 KHÔNG UNDO ĐƯỢC.
+    """DISM ... /StartComponentCleanup /ResetBase — CANNOT BE UNDONE.
 
-    Sau khi chạy: không gỡ được các update Windows đã cài.
-    Chỉ gọi khi user đã tick riêng + xác nhận.
+    After running: installed Windows updates cannot be removed.
+    Only call when the user ticked it explicitly + confirmed.
     """
     ok, msg = _check()
     if not ok:
@@ -52,10 +52,10 @@ def reset_base():
         rc, out = _run(["/Online", "/Cleanup-Image",
                         "/StartComponentCleanup", "/ResetBase"])
         if rc == 0:
-            return True, "DISM ResetBase hoàn tất (không thể undo)."
+            return True, "DISM ResetBase finished (cannot be undone)."
         tail = out.strip().splitlines()
-        return False, f"DISM ResetBase thất bại: {tail[-1][:160] if tail else rc}"
+        return False, f"DISM ResetBase failed: {tail[-1][:160] if tail else rc}"
     except subprocess.TimeoutExpired:
-        return False, "DISM ResetBase quá 30 phút — đã dừng chờ."
+        return False, "DISM ResetBase ran over 30 minutes — stopped waiting."
     except Exception as e:  # noqa: BLE001
-        return False, f"Lỗi DISM ResetBase: {e}"
+        return False, f"DISM ResetBase error: {e}"

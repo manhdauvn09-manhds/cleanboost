@@ -1,7 +1,7 @@
-"""Các thao tác dọn hệ thống theo OS (dùng bởi special rules).
+"""OS-specific system cleanup operations (used by special rules).
 
-Mỗi hàm trả về (ok, message[, bytes]) và KHÔNG BAO GIỜ raise.
-Các hàm nguy hiểm (high risk) chỉ được gọi khi user tick riêng + xác nhận.
+Each function returns (ok, message[, bytes]) and NEVER raises.
+Dangerous (high risk) functions only run when the user ticked them + confirmed.
 """
 import os
 import re
@@ -39,16 +39,16 @@ def hiberfil_size() -> int:
 def hibernate_off():
     """🔴 Tắt Hibernate -> xóa hiberfil.sys (mất Hibernate + Fast Startup)."""
     if sys.platform != "win32":
-        return False, "Chỉ hỗ trợ Windows."
+        return False, "Windows only."
     if not privilege.is_admin():
-        return False, "Cần quyền Admin."
+        return False, "Admin rights required."
     rc, out = _run(["powercfg", "/hibernate", "off"], timeout=60)
     if rc == 0 and not os.path.exists(
             os.path.join(os.environ.get("SystemDrive", "C:"), "hiberfil.sys")):
-        return True, "Đã tắt Hibernate, xóa hiberfil.sys."
+        return True, "Hibernate disabled, hiberfil.sys removed."
     if rc == 0:
-        return True, "Đã chạy powercfg /hibernate off."
-    return False, f"Không tắt được Hibernate: {out.strip()[:160]}"
+        return True, "Ran powercfg /hibernate off."
+    return False, f"Could not disable Hibernate: {out.strip()[:160]}"
 
 
 def count_restore_points() -> int:
@@ -70,16 +70,16 @@ def prune_old_restore_points():
     Dùng vssadmin: liệt kê shadow copies, xóa tất cả trừ mới nhất.
     """
     if sys.platform != "win32":
-        return False, "Chỉ hỗ trợ Windows.", 0
+        return False, "Windows only.", 0
     if not privilege.is_admin():
-        return False, "Cần quyền Admin.", 0
+        return False, "Admin rights required.", 0
     rc, out = _run(["vssadmin", "list", "shadows"], timeout=120)
     if rc != 0:
-        return False, "Không đọc được danh sách shadow copies.", 0
+        return False, "Could not read shadow copy list.", 0
     # mỗi block "Shadow Copy ID: {xxx}" kèm "Original Volume: (C:)\\?\Volume{...}\"
     ids = re.findall(r"Shadow Copy ID:\s*(\{[0-9a-fA-F-]+\})", out)
     if len(ids) <= 1:
-        return True, "Chỉ có 0-1 restore point — không cần xóa.", 0
+        return True, "Only 0-1 restore point(s) — nothing to remove.", 0
     # vssadmin liệt kê theo thời gian tăng dần -> giữ cái cuối
     removed = 0
     for sid in ids[:-1]:
@@ -87,17 +87,17 @@ def prune_old_restore_points():
                        f"/shadow={sid}", "/quiet"], timeout=120)
         if rc2 == 0:
             removed += 1
-    return True, (f"Đã xóa {removed}/{len(ids) - 1} restore point cũ, "
-                  "giữ lại điểm mới nhất."), 0
+    return True, (f"Deleted {removed}/{len(ids) - 1} old restore point(s), "
+                  "kept the newest."), 0
 
 
 def empty_update_cache():
     """Dọn C:\\Windows\\SoftwareDistribution\\Download: dừng wuauserv,
     xóa file, start lại service."""
     if sys.platform != "win32":
-        return False, "Chỉ hỗ trợ Windows.", 0
+        return False, "Windows only.", 0
     if not privilege.is_admin():
-        return False, "Cần quyền Admin.", 0
+        return False, "Admin rights required.", 0
     dl = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"),
                       "SoftwareDistribution", "Download")
     _run(["net", "stop", "wuauserv"], timeout=60)
@@ -114,7 +114,7 @@ def empty_update_cache():
                     continue
     finally:
         _run(["net", "start", "wuauserv"], timeout=60)
-    return True, f"Đã dọn Windows Update cache ({n} file).", freed
+    return True, f"Windows Update cache cleaned ({n} file(s)).", freed
 
 
 # ------------------------- Linux -------------------------
@@ -134,25 +134,25 @@ def apt_cache_size() -> int:
 
 def apt_clean():
     if sys.platform == "win32":
-        return False, "Chỉ hỗ trợ Linux.", 0
+        return False, "Linux only.", 0
     if os.geteuid() != 0:
-        return False, "Cần root (chạy bằng sudo).", 0
+        return False, "Root required (run with sudo).", 0
     before = apt_cache_size()
     rc, _ = _run(["apt-get", "clean", "-y"], timeout=300)
     if rc == 0:
-        return True, "Đã chạy apt-get clean.", before - apt_cache_size()
-    return False, "apt-get clean thất bại.", 0
+        return True, "Ran apt-get clean.", before - apt_cache_size()
+    return False, "apt-get clean failed.", 0
 
 
 def snap_prune_old():
     """Gỡ các bản snap 'disabled' (cũ)."""
     if shutil.which("snap") is None:
-        return False, "Không tìm thấy snap.", 0
+        return False, "snap not found.", 0
     if os.geteuid() != 0:
-        return False, "Cần root (chạy bằng sudo).", 0
+        return False, "Root required (run with sudo).", 0
     rc, out = _run(["snap", "list", "--all"], timeout=60)
     if rc != 0:
-        return False, "Không đọc được snap list.", 0
+        return False, "Could not read snap list.", 0
     removed = 0
     for line in out.splitlines()[1:]:
         parts = line.split()
@@ -163,7 +163,7 @@ def snap_prune_old():
                           timeout=300)
             if rc2 == 0:
                 removed += 1
-    return True, f"Đã gỡ {removed} bản snap cũ.", 0
+    return True, f"Removed {removed} old snap revision(s).", 0
 
 
 def old_kernels_info():
@@ -187,15 +187,15 @@ def old_kernels_info():
 def purge_old_kernels():
     """🔴 Gỡ kernel cũ (giữ kernel đang chạy + 2 bản mới nhất)."""
     if os.geteuid() != 0:
-        return False, "Cần root (chạy bằng sudo).", 0
+        return False, "Root required (run with sudo).", 0
     targets = old_kernels_info()
     if not targets:
-        return True, "Không có kernel cũ nào để gỡ.", 0
+        return True, "No old kernels to remove.", 0
     rc, out = _run(["apt-get", "purge", "-y"] + targets, timeout=900)
     if rc == 0:
         _run(["update-grub"], timeout=120)
-        return True, f"Đã gỡ {len(targets)} kernel cũ.", 0
-    return False, f"Gỡ kernel thất bại: {out.strip()[-160:]}", 0
+        return True, f"Removed {len(targets)} old kernel(s).", 0
+    return False, f"Kernel removal failed: {out.strip()[-160:]}", 0
 
 
 # ------------------------- Chung -------------------------
@@ -203,9 +203,9 @@ def purge_old_kernels():
 def docker_prune():
     """Xóa image/container/network Docker không dùng (không xóa volume)."""
     if shutil.which("docker") is None:
-        return False, "Không tìm thấy docker.", 0
+        return False, "docker not found.", 0
     rc, out = _run(["docker", "system", "prune", "-f"], timeout=600)
     if rc == 0:
         m = re.search(r"Total reclaimed space:\s*([\d.]+\s*\w+)", out)
-        return True, "Đã prune Docker" + (f" ({m.group(1)})." if m else "."), 0
-    return False, f"docker prune thất bại: {out.strip()[-160:]}", 0
+        return True, "Docker pruned" + (f" ({m.group(1)})." if m else "."), 0
+    return False, f"docker prune failed: {out.strip()[-160:]}", 0

@@ -1,4 +1,4 @@
-"""Kỹ thuật giải phóng RAM theo từng OS (không kill process nào)."""
+"""Per-OS RAM freeing techniques (no process is killed)."""
 import ctypes
 from ctypes import wintypes
 import os
@@ -15,7 +15,7 @@ def trim_working_sets():
     cho process của chính mình; cần admin để trim process khác.
     """
     if sys.platform != "win32":
-        return False, "Chỉ hỗ trợ trên Windows."
+        return False, "Windows only."
     psapi = ctypes.WinDLL("psapi", use_last_error=True)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     # Khai báo argtypes/restype: HANDLE là 64-bit trên Windows 64-bit,
@@ -43,7 +43,7 @@ def trim_working_sets():
                 kernel32.CloseHandle(h)
         except Exception:
             continue
-    return True, f"Đã trim working set của {done} process."
+    return True, f"Trimmed working set of {done} process(es)."
 
 
 def purge_standby_list():
@@ -53,7 +53,7 @@ def purge_standby_list():
     mà Windows đang giữ để nhường chỗ cho app mới.
     """
     if sys.platform != "win32":
-        return False, "Chỉ hỗ trợ trên Windows."
+        return False, "Windows only."
     try:
         ntdll = ctypes.WinDLL("ntdll")
         MEMORY_PURGE_STANDBY_LIST = 4
@@ -61,32 +61,32 @@ def purge_standby_list():
         status = ntdll.NtSetSystemInformation(80, ctypes.byref(cmd),
                                               ctypes.sizeof(cmd))
         if status == 0:
-            return True, "Đã xả Standby List."
+            return True, "Standby List flushed."
         return False, (
-            "Không xả được Standby List (thường do thiếu quyền Admin). "
+            "Could not flush Standby List (usually missing Admin rights). "
             f"Mã NTSTATUS: {status & 0xFFFFFFFF:#x}"
         )
     except Exception as e:  # noqa: BLE001
-        return False, f"Lỗi khi xả Standby List: {e}"
+        return False, f"Error flushing Standby List: {e}"
 
 
 def drop_caches():
     """Linux: xả page cache (cần root)."""
     if sys.platform == "win32":
-        return False, "Chỉ hỗ trợ trên Linux."
+        return False, "Linux only."
     if os.geteuid() != 0:
-        return False, "Cần quyền root — hãy chạy: sudo python3 main.py freeram"
+        return False, "Root required — run: sudo python3 main.py freeram"
     try:
         subprocess.run(["sync"], check=False)
         with open("/proc/sys/vm/drop_caches", "w") as f:
             f.write("3")
-        return True, "Đã xả page cache (drop_caches=3)."
+        return True, "Page cache dropped (drop_caches=3)."
     except Exception as e:  # noqa: BLE001
-        return False, f"Lỗi khi drop caches: {e}"
+        return False, f"Error dropping caches: {e}"
 
 
 def light_clean() -> list:
-    """Dọn RAM nhẹ: không kill process nào. Trả về list message."""
+    """Light RAM clean: kills nothing. Returns a list of messages."""
     msgs = []
     if sys.platform == "win32":
         _, m1 = trim_working_sets()

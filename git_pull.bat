@@ -1,23 +1,29 @@
 @echo off
 chcp 65001 >nul
-title CleanBoost - Pull source tu GitHub
+title CleanBoost - Pull latest source from GitHub
 cd /d "%~dp0"
 where git >nul 2>nul
 if errorlevel 1 (
-  echo [LOI] Chua cai Git! Tai Git tai: https://git-scm.com/download/win
+  echo [ERROR] Git not found! Download it from: https://git-scm.com/download/win
   pause
   exit /b 1
 )
 echo ============================================
-echo  CleanBoost - Lay source moi nhat tu GitHub
+echo  CleanBoost - Pull latest source from GitHub
 echo ============================================
 git pull
 if errorlevel 1 (
   echo.
-  echo [LOI] Pull that bai. Kiem tra mang hoac quyen truy cap repo.
-) else (
-  echo.
-  echo XONG! Source da duoc cap nhat ban moi nhat.
-  echo Neu requirements.txt co thu vien moi, chay lai setup_windows.bat.
+  echo [ERROR] Pull failed. Check your connection or repo access.
+  pause
+  exit /b 1
 )
+echo.
+echo Source is up to date.
+if exist ".venv\Scripts\python.exe" (
+  echo Syncing libraries if needed...
+  ".venv\Scripts\python.exe" check_env.py
+)
+echo.
+echo DONE! Double-click run_cleanboost.bat to launch the app.
 pause

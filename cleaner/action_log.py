@@ -1,4 +1,4 @@
-"""Nhật ký audit: mọi thao tác kill/dọn/khôi phục đều ghi vào đây (JSONL)."""
+"""Audit log: every kill/clean/restore action is recorded here (JSONL)."""
 import json
 import os
 import sys
@@ -15,7 +15,7 @@ def _path() -> str:
 
 
 def log(action: str, detail: dict):
-    """Ghi 1 dòng log. Không bao giờ raise (log lỗi thì bỏ qua)."""
+    """Write one log line. Never raises (log errors are ignored)."""
     try:
         os.makedirs(os.path.dirname(_path()), exist_ok=True)
         entry = {"ts": datetime.now(timezone.utc).isoformat(),

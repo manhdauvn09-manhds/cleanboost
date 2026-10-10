@@ -1,7 +1,8 @@
-"""Khu cách ly (Quarantine).
+"""Quarantine.
 
-File bị dọn được CHUYỂN vào đây thay vì xóa ngay: giữ 14 ngày,
-khôi phục 1-click về đúng chỗ cũ. Hết hạn mới xóa vĩnh viễn (có hỏi).
+Cleaned files are MOVED here instead of deleted: kept 14 days,
+1-click restore to the original location. Expired items are deleted
+permanently (with confirmation).
 """
 import json
 import os
@@ -34,6 +35,15 @@ def _load() -> dict:
         return {"items": []}
 
 
+def _safe_stored(stored_rel: str):
+    """Return the absolute path inside quarantine, or None on traversal."""
+    base = os.path.realpath(root())
+    abs_p = os.path.realpath(os.path.join(base, stored_rel))
+    if abs_p == base or abs_p.startswith(base + os.sep):
+        return abs_p
+    return None
+
+
 def _save(idx: dict):
     os.makedirs(root(), exist_ok=True)
     tmp = _index_path() + ".tmp"
@@ -59,7 +69,7 @@ def _path_size(p: str) -> int:
 
 
 def put(orig_path: str, rule_id: str = "") -> dict:
-    """Chuyển 1 file hoặc thư mục vào khu cách ly. Trả về item đã lưu."""
+    """Move one file or folder into quarantine. Returns the stored item."""
     os.makedirs(root(), exist_ok=True)
     batch = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     item_id = uuid.uuid4().hex[:12]
@@ -91,46 +101,48 @@ def total_size() -> int:
 
 
 def restore(item_id: str):
-    """Khôi phục file về chỗ cũ. Trả về (ok, message)."""
+    """Restore a file to its original location. Returns (ok, message)."""
     idx = _load()
     item = next((i for i in idx["items"] if i["id"] == item_id), None)
     if not item:
-        return False, "Không tìm thấy trong khu cách ly."
-    stored_abs = os.path.join(root(), item["stored"])
-    if not os.path.exists(stored_abs):
-        return False, "File cách ly không còn tồn tại (có thể đã bị xóa tay)."
+        return False, "Not found in quarantine."
+    stored_abs = _safe_stored(item["stored"])
+    if not stored_abs or not os.path.exists(stored_abs):
+        return False, "Quarantined file no longer exists (may have been deleted manually)."
     os.makedirs(os.path.dirname(item["orig"]), exist_ok=True)
     dest = item["orig"]
     if os.path.exists(dest):
-        # chỗ cũ đã có file mới -> không ghi đè, đổi tên
+        # original location has a new file -> do not overwrite, rename
         dest = f"{dest}.restored_{item['id']}"
     shutil.move(stored_abs, dest)
     idx["items"] = [i for i in idx["items"] if i["id"] != item_id]
     _save(idx)
-    return True, f"Đã khôi phục về: {dest}"
+    return True, f"Restored to: {dest}"
 
 
 def delete_permanent(item_id: str):
-    """Xóa vĩnh viễn 1 item trong khu cách ly."""
+    """Permanently delete one quarantined item."""
     idx = _load()
     item = next((i for i in idx["items"] if i["id"] == item_id), None)
     if not item:
-        return False, "Không tìm thấy trong khu cách ly."
-    stored_abs = os.path.join(root(), item["stored"])
+        return False, "Not found in quarantine."
+    stored_abs = _safe_stored(item["stored"])
+    if not stored_abs:
+        return False, "Invalid path."
     try:
         if os.path.isdir(stored_abs) and not os.path.islink(stored_abs):
             shutil.rmtree(stored_abs, ignore_errors=False)
         elif os.path.lexists(stored_abs):
             os.remove(stored_abs)
     except OSError as e:
-        return False, f"Không xóa được: {e}"
+        return False, f"Could not delete: {e}"
     idx["items"] = [i for i in idx["items"] if i["id"] != item_id]
     _save(idx)
-    return True, f"Đã xóa vĩnh viễn: {os.path.basename(item['orig'])}"
+    return True, f"Permanently deleted: {os.path.basename(item['orig'])}"
 
 
 def purge_expired(days: int = RETENTION_DAYS):
-    """Xóa vĩnh viễn các item quá hạn. Trả về (số item, dung lượng giải phóng)."""
+    """Permanently delete expired items. Returns (count, freed_bytes)."""
     from datetime import timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     idx = _load()
@@ -142,7 +154,10 @@ def purge_expired(days: int = RETENTION_DAYS):
             kept.append(item)
             continue
         if when < cutoff:
-            stored_abs = os.path.join(root(), item["stored"])
+            stored_abs = _safe_stored(item["stored"])
+            if not stored_abs:
+                kept.append(item)
+                continue
             try:
                 if os.path.isdir(stored_abs) and not os.path.islink(stored_abs):
                     shutil.rmtree(stored_abs, ignore_errors=False)
@@ -151,7 +166,7 @@ def purge_expired(days: int = RETENTION_DAYS):
                 freed += item.get("size", 0)
                 removed += 1
             except OSError:
-                kept.append(item)  # xóa lỗi -> giữ lại
+                kept.append(item)  # delete failed -> keep
         else:
             kept.append(item)
     idx["items"] = kept

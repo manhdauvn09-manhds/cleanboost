@@ -1,10 +1,10 @@
-"""Engine dọn THẬT.
+"""Real cleanup engine.
 
-Luồng: pre-flight (restore point nếu level>=2 trên Windows)
-  -> với từng rule được chọn: duyệt lại full file list
-  -> kiểm tra protected path lần cuối
-  -> mặc định CHUYỂN vào khu cách ly; chỉ xóa vĩnh viễn khi user chọn.
-Không bao giờ raise — mọi lỗi gom vào summary["failed"].
+Flow: pre-flight (restore point when level>=2 on Windows)
+  -> for each selected rule: re-scan the full file list
+  -> final protected-path check
+  -> QUARANTINE by default; permanent delete only when chosen.
+Never raises — all errors go to summary["failed"].
 """
 import ctypes
 import os
@@ -20,9 +20,9 @@ from safety import protected
 
 
 def _clean_special(rule: dict, res: dict = None, permanent: bool = False):
-    """Xử lý các rule đặc biệt.
+    """Handle special rules.
 
-    Trả về (ok, message, freed_bytes, stats) với
+    Returns (ok, message, freed_bytes, stats) with
     stats = {"quarantined": int, "deleted": int}.
     """
     kind = rule["special"]
@@ -35,10 +35,10 @@ def _clean_special(rule: dict, res: dict = None, permanent: bool = False):
             SHERB = 0x1 | 0x2 | 0x4  # NOCONFIRMATION | NOPROGRESSUI | NOSOUND
             rc = ctypes.WinDLL("shell32").SHEmptyRecycleBinW(None, None, SHERB)
             if rc == 0:
-                return True, "Đã dọn sạch Recycle Bin.", 0, {"deleted": 0}
-            return False, "Không dọn được Recycle Bin.", 0, {}
+                return True, "Recycle Bin emptied.", 0, {"deleted": 0}
+            return False, "Could not empty Recycle Bin.", 0, {}
         except Exception as e:  # noqa: BLE001
-            return False, f"Lỗi Recycle Bin: {e}", 0, {}
+            return False, f"Recycle Bin error: {e}", 0, {}
     if kind == "trash":
         freed, n = 0, 0
         for sub in ("files", "info"):
@@ -54,19 +54,19 @@ def _clean_special(rule: dict, res: dict = None, permanent: bool = False):
                         n += 1
                     except OSError:
                         continue
-        return True, f"Đã dọn thùng rác ({n} file).", freed, {"deleted": n}
+        return True, f"Trash emptied ({n} file(s)).", freed, {"deleted": n}
     if kind == "journal":
         if os.geteuid() != 0:
-            return False, "Cần root để vacuum journal (chạy bằng sudo).", 0, {}
+            return False, "Root needed to vacuum journal (run with sudo).", 0, {}
         try:
             r = subprocess.run(["journalctl", "--vacuum-time=7d"],
                                capture_output=True, text=True, timeout=120)
             if r.returncode == 0:
-                return True, "Đã vacuum journal (giữ 7 ngày).", 0, {"deleted": 0}
-            return False, "journalctl thất bại.", 0, {}
+                return True, "Journal vacuumed (kept 7 days).", 0, {"deleted": 0}
+            return False, "journalctl failed.", 0, {}
         except Exception as e:  # noqa: BLE001
-            return False, f"Lỗi journal: {e}", 0, {}
-    return False, f"special '{kind}' chưa hỗ trợ dọn thật.", 0, {}
+            return False, f"Journal error: {e}", 0, {}
+    return False, f"special '{kind}' real-clean not supported.", 0, {}
 
 
 def _clean_special2(rule: dict, res: dict = None, permanent: bool = False):
@@ -107,11 +107,11 @@ def _clean_special2(rule: dict, res: dict = None, permanent: bool = False):
             except OSError as e:
                 failed.append((p, str(e)))
         if permanent:
-            msg = f"Đã xóa vĩnh viễn {n_del} thư mục mồ côi."
+            msg = f"Permanently deleted {n_del} orphan folder(s)."
         else:
-            msg = f"Đã cách ly {n} thư mục mồ côi."
+            msg = f"Quarantined {n} orphan folder(s)."
         if failed:
-            msg += f" ({len(failed)} lỗi)"
+            msg += f" ({len(failed)} error(s))"
         stats = {"quarantined": n,
                  "quarantined_bytes": 0 if permanent else freed,
                  "deleted": n_del}
@@ -134,7 +134,7 @@ def _clean_special2(rule: dict, res: dict = None, permanent: bool = False):
     if kind == "old_kernels":
         ok, msg, freed = sysclean.purge_old_kernels()
         return ok, msg, freed, {"deleted": 0}
-    return False, f"special '{kind}' chưa hỗ trợ dọn thật.", 0, {}
+    return False, f"special '{kind}' real-clean not supported.", 0, {}
 
 
 def _anchor_of(path: str) -> str:
@@ -207,7 +207,7 @@ def clean_rules(results: list, rule_ids: set, permanent: bool = False,
             continue
         if rule.get("requires_admin") and not privilege.is_admin():
             summary["failed"].append(
-                (rule["name"], "cần quyền Admin — đã bỏ qua"))
+                (rule["name"], "needs Admin rights — skipped"))
             continue
         if rule.get("special"):
             ok, msg, freed, stats = _clean_special(rule, res, permanent)
@@ -266,24 +266,23 @@ def fmt_summary(s: dict) -> str:
     lines = []
     if s["restore_point"]:
         lines.append(f"• Restore point: {s['restore_point']}")
-    # Con số quan trọng nhất: dung lượng ổ đĩa giải phóng THỰC TẾ (đo trước/sau)
+    # The key number: REAL freed disk space (measured before/after)
     if s.get("freed_real") is not None:
-        lines.append(f"• 💾 Ổ đĩa đã giải phóng THỰC TẾ: {fmt_gb(s['freed_real'])} "
-                     "(đo trực tiếp từ ổ đĩa)")
+        lines.append(f"REAL disk space freed: {fmt_gb(s['freed_real'])} "
+                     "(measured directly from the drive)")
     if s["deleted"]:
-        lines.append(f"• Đã xóa vĩnh viễn: {s['deleted']} file")
+        lines.append(f"Permanently deleted: {s['deleted']} file(s)")
     if s["quarantined"]:
-        lines.append(f"• Đã chuyển vào khu cách ly: {s['quarantined']} file "
+        lines.append(f"Moved to quarantine: {s['quarantined']} file(s) "
                      f"({fmt_gb(s['quarantined_bytes'])})")
-        lines.append("  ⚠️ File cách ly vẫn nằm trên ổ đĩa — CHƯA giải phóng "
-                     "dung lượng. Muốn giải phóng, vào tab Khu cách ly → "
-                     "Xóa vĩnh viễn.")
+        lines.append("  NOTE: quarantined files still occupy disk space — NOT freed yet. "
+                     "To free space, go to Quarantine -> Delete permanently.")
     for sp in s["specials"]:
         icon = "✅" if sp["ok"] else "⚠️"
         lines.append(f"• {icon} {sp['rule']}: {sp['message']}")
     if s["failed"]:
-        lines.append(f"• Bỏ qua/lỗi: {len(s['failed'])} mục "
-                     f"(vd: {s['failed'][0][0]} — {s['failed'][0][1][:80]})")
+        lines.append(f"Skipped/errors: {len(s['failed'])} item(s) "
+                     f"(e.g.: {s['failed'][0][0]} — {s['failed'][0][1][:80]})")
     if not s["quarantined"] and not s["deleted"] and not s["specials"]:
-        lines.append("• Không có gì được dọn.")
+        lines.append("Nothing was cleaned.")
     return "\n".join(lines)

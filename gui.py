@@ -1,4 +1,4 @@
-"""Chạy giao diện CleanBoost.
+"""Launch the CleanBoost GUI.
 
     .venv/bin/python gui.py
 """
