@@ -23,22 +23,82 @@ from safety import protected  # noqa: E402
 
 GB = 1024 ** 3
 FONT = "Segoe UI"
+MONO = "Consolas"
+ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "assets")
+LOGO_PATH = os.path.join(ASSETS_DIR, "logo.png")
 
 # ------------------------- theme -------------------------
-C_BG = "#0e1117"
-C_SIDEBAR = "#141926"
-C_CARD = "#1a2030"
-C_CARD2 = "#232c42"
-C_LINE = "#2a3348"
-C_TXT = "#e8edf7"
-C_MUT = "#9aa7c2"
+THEMES = {
+    "dark": dict(BG="#0e1117", SIDEBAR="#141926", CARD="#1a2030",
+                 CARD2="#232c42", LINE="#2a3348", TXT="#e8edf7",
+                 MUT="#9aa7c2"),
+    "light": dict(BG="#edf0f5", SIDEBAR="#ffffff", CARD="#ffffff",
+                  CARD2="#dfe5ef", LINE="#c3ccdd", TXT="#17202f",
+                  MUT="#5d6c88"),
+}
 C_ACC = "#4f8cff"
-C_GRN = "#34d399"
-C_YLW = "#fbbf24"
-C_RED = "#f87171"
+C_GRN = "#1a9e6b"
+C_YLW = "#b8860b"
+C_RED = "#e05252"
 
-ctk.set_appearance_mode("dark")
+C_BG = C_SIDEBAR = C_CARD = C_CARD2 = C_LINE = C_TXT = C_MUT = ""
+
+
+def _theme_cfg_path():
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        d = os.path.join(base, "CleanBoost")
+    else:
+        d = os.path.join(os.path.expanduser("~"), ".config", "cleanboost")
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, "theme.txt")
+
+
+def _load_theme():
+    try:
+        with open(_theme_cfg_path(), encoding="utf-8") as f:
+            m = f.read().strip()
+            return m if m in THEMES else "dark"
+    except OSError:
+        return "dark"
+
+
+def set_theme(mode):
+    """Đổi theme và lưu lại. Các hằng C_* được gán lại."""
+    global C_BG, C_SIDEBAR, C_CARD, C_CARD2, C_LINE, C_TXT, C_MUT
+    t = THEMES[mode]
+    C_BG, C_SIDEBAR, C_CARD = t["BG"], t["SIDEBAR"], t["CARD"]
+    C_CARD2, C_LINE, C_TXT, C_MUT = t["CARD2"], t["LINE"], t["TXT"], t["MUT"]
+    ctk.set_appearance_mode(mode)
+    try:
+        with open(_theme_cfg_path(), "w", encoding="utf-8") as f:
+            f.write(mode)
+    except OSError:
+        pass
+
+
+set_theme(_load_theme())
 ctk.set_default_color_theme("blue")
+
+
+def _pick_font(candidates):
+    """Chọn font đầu tiên có trên máy (đảm bảo hiển thị tiếng Việt)."""
+    try:
+        import tkinter.font as tkfont
+        avail = set(tkfont.families())
+    except Exception:  # noqa: BLE001
+        avail = set()
+    for c in candidates:
+        if c in avail:
+            return c
+    return candidates[0]
+
+
+def _init_fonts():
+    global FONT, MONO
+    FONT = _pick_font(["Segoe UI", "Arial", "Tahoma", "Verdana", "DejaVu Sans"])
+    MONO = _pick_font(["Consolas", "Courier New", "DejaVu Sans Mono"])
 
 
 def _bg(fn):
@@ -81,18 +141,54 @@ class RingGauge(tk.Canvas):
                              fill=C_MUT, font=(FONT, 10))
 
 
+def _center_on(win, parent):
+    """Căn Toplevel vào giữa cửa sổ cha."""
+    try:
+        parent.update_idletasks()
+        win.update_idletasks()
+        pw, ph = parent.winfo_width(), parent.winfo_height()
+        px, py = parent.winfo_x(), parent.winfo_y()
+        ww, hh = win.winfo_width(), win.winfo_height()
+        if ww < 50:
+            ww = 600
+        if hh < 50:
+            hh = 400
+        x = px + max(0, (pw - ww) // 2)
+        y = py + max(0, (ph - hh) // 2)
+        win.geometry(f"+{x}+{y}")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _make_modal(win, parent):
+    """Biến Toplevel thành popup modal căn giữa màn hình chính.
+
+    Phải đóng popup mới thao tác được màn hình chính.
+    """
+    try:
+        win.transient(parent)
+    except Exception:  # noqa: BLE001
+        pass
+    _center_on(win, parent)
+    try:
+        win.grab_set()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _dark_tree(parent):
     style = ttk.Style(parent)
     try:
         style.theme_use("clam")
     except Exception:  # noqa: BLE001
         pass
-    style.configure("Treeview", background="#161b28", foreground=C_TXT,
-                    fieldbackground="#161b28", rowheight=28, borderwidth=0,
+    style.configure("Treeview", background=C_CARD, foreground=C_TXT,
+                    fieldbackground=C_CARD, rowheight=28, borderwidth=0,
                     font=(FONT, 11))
-    style.configure("Treeview.Heading", background="#232c42",
-                    foreground="#ffffff", relief="flat", font=(FONT, 11, "bold"))
-    style.map("Treeview", background=[("selected", "#2f5fd0")])
+    style.configure("Treeview.Heading", background=C_CARD2,
+                    foreground=C_TXT, relief="flat", font=(FONT, 11, "bold"))
+    style.map("Treeview", background=[("selected", C_ACC)],
+              foreground=[("selected", "#ffffff")])
     return ttk.Treeview(parent)
 
 
@@ -106,6 +202,7 @@ class DetailDialog(ctk.CTkToplevel):
         rule = res["rule"]
         self.title(f"Chi tiết — {rule['name']}")
         self.geometry("760x520")
+        _make_modal(self, master)
         self.res = res
 
         head = ctk.CTkFrame(self, fg_color="transparent")
@@ -183,6 +280,7 @@ class ConfirmCleanDialog(ctk.CTkToplevel):
         total = sum(s for _, s in items)
         self.title("Xác nhận dọn dẹp")
         self.geometry("620x480")
+        _make_modal(self, master)
 
         ctk.CTkLabel(self,
                      text="🗑 Xóa vĩnh viễn" if permanent else "📦 Chuyển vào khu cách ly",
@@ -241,8 +339,9 @@ class ResultDialog(ctk.CTkToplevel):
         super().__init__(master)
         self.title(title)
         self.geometry("560x380")
+        _make_modal(self, master)
         ctk.CTkLabel(self, text=title, font=(FONT, 15, "bold")).pack(pady=(14, 6))
-        box = ctk.CTkTextbox(self, font=("Consolas", 12), wrap="word")
+        box = ctk.CTkTextbox(self, font=(MONO, 12), wrap="word")
         box.pack(fill="both", expand=True, padx=16, pady=6)
         box.insert("1.0", text)
         box.configure(state="disabled")
@@ -257,6 +356,7 @@ class EmergencyDialog(ctk.CTkToplevel):
         super().__init__(master)
         self.title("Giải phóng RAM khẩn cấp")
         self.geometry("540x460")
+        _make_modal(self, master)
         self._on_done = on_done
         self._vars = {}
         ctk.CTkLabel(self, text="Chọn app để tắt (đã loại trừ process hệ thống):",
@@ -296,6 +396,7 @@ class HelpWindow(ctk.CTkToplevel):
         super().__init__(master)
         self.title("Hướng dẫn sử dụng — CleanBoost")
         self.geometry("780x600")
+        _make_modal(self, master)
         ctk.CTkLabel(self, text="📖 Hướng dẫn sử dụng",
                      font=(FONT, 17, "bold")).pack(pady=(14, 6))
         self.box = ctk.CTkTextbox(self, wrap="word", font=(FONT, 13))
@@ -306,8 +407,8 @@ class HelpWindow(ctk.CTkToplevel):
         tb.tag_config("h2", font=(FONT, 15, "bold"), foreground=C_TXT,
                       spacing1=8, spacing3=4)
         tb.tag_config("bold", font=(FONT, 13, "bold"))
-        tb.tag_config("mono", font=("Consolas", 12), foreground="#7dd3fc",
-                      background="#141926")
+        tb.tag_config("mono", font=(MONO, 12), foreground=C_ACC,
+                      background=C_CARD2)
         tb.tag_config("mut", foreground=C_MUT)
         self._render()
         self.box.configure(state="disabled")
@@ -383,6 +484,12 @@ class App(ctk.CTk):
         self.geometry("1120x700")
         self.minsize(980, 600)
         self.configure(fg_color=C_BG)
+        _init_fonts()
+        self._next_theme = None
+        try:
+            self.iconphoto(True, tk.PhotoImage(file=LOGO_PATH))
+        except Exception:  # noqa: BLE001
+            pass
 
         self._level = tk.IntVar(value=1)
         self._last_scan = []
@@ -408,9 +515,19 @@ class App(ctk.CTk):
 
         logo = ctk.CTkFrame(sb, fg_color="transparent")
         logo.pack(fill="x", padx=16, pady=(20, 6))
-        ctk.CTkLabel(logo, text="🧹 CleanBoost", font=(FONT, 20, "bold"),
+        try:
+            from PIL import Image as PILImage
+            _pil = PILImage.open(LOGO_PATH)
+            self._logo_img = ctk.CTkImage(_pil, size=(52, 52))
+            ctk.CTkLabel(logo, image=self._logo_img, text="").pack(
+                side="left", padx=(0, 10))
+        except Exception:  # noqa: BLE001
+            pass
+        txt = ctk.CTkFrame(logo, fg_color="transparent")
+        txt.pack(side="left")
+        ctk.CTkLabel(txt, text="CleanBoost", font=(FONT, 19, "bold"),
                      anchor="w").pack(anchor="w")
-        ctk.CTkLabel(logo, text="PRO • dọn RAM & rác", font=(FONT, 11),
+        ctk.CTkLabel(txt, text="PRO • dọn RAM & rác", font=(FONT, 11),
                      text_color=C_MUT, anchor="w").pack(anchor="w")
 
         for key, icon, label in PAGES:
@@ -423,7 +540,9 @@ class App(ctk.CTk):
             self._nav_btns[key] = b
 
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
-        ctk.CTkLabel(sb, text="v2.1 • chạy nội bộ", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="© copy by Đậu Sỹ Mạnh", font=(FONT, 11),
+                     text_color=C_MUT).pack(pady=(0, 4))
+        ctk.CTkLabel(sb, text="CleanBoost v2.2 PRO", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
@@ -442,6 +561,12 @@ class App(ctk.CTk):
                                 hover_color=C_ACC,
                                 command=lambda: HelpWindow(self))
         help_btn.pack(side="right", padx=(8, 0))
+        # nút đổi theme sáng/tối
+        self.theme_btn = ctk.CTkButton(
+            top, text="☀️" if C_BG == THEMES["dark"]["BG"] else "🌙",
+            width=34, height=34, font=(FONT, 14), fg_color=C_CARD2,
+            hover_color=C_ACC, command=self._toggle_theme)
+        self.theme_btn.pack(side="right", padx=(8, 0))
         is_admin = privilege.is_admin()
         self.admin_badge = ctk.CTkLabel(
             top, text="● ADMIN" if is_admin else "● USER",
@@ -468,6 +593,12 @@ class App(ctk.CTk):
                                        text_color=C_MUT)
         self.status_lbl.pack(side="left", padx=16)
         self._tick_status()
+
+    def _toggle_theme(self):
+        new = "light" if C_BG == THEMES["dark"]["BG"] else "dark"
+        set_theme(new)
+        self._next_theme = new
+        self.destroy()
 
     def _show_page(self, key):
         for k, b in self._nav_btns.items():
@@ -683,7 +814,8 @@ class App(ctk.CTk):
             name = r["name"] if r else f"PID {pid}"
             if protected.check_process(name, pid) == "warn":
                 if not messagebox.askyesno("Xác nhận",
-                        f"{name} là process hệ thống nhạy cảm.\nVẫn tắt?"):
+                        f"{name} là process hệ thống nhạy cảm.\nVẫn tắt?",
+                        parent=self):
                     continue
             ok, _ = process_manager.kill_process(pid, force=force)
             n += ok
@@ -836,14 +968,14 @@ class App(ctk.CTk):
         from tkinter import messagebox
         items = self._checked()
         if not items:
-            messagebox.showwarning("Chưa chọn", "Bạn chưa tick nhóm nào để dọn.")
+            messagebox.showwarning("Chưa chọn", "Bạn chưa tick nhóm nào để dọn.", parent=self)
             return
         dlg = ConfirmCleanDialog(self, items, permanent)
         self.wait_window(dlg)
         if not dlg.result:
             return
         if self._level.get() >= 2 and sys.platform == "win32":
-            messagebox.showinfo("An toàn", "App sẽ tự tạo System Restore Point trước khi dọn.")
+            messagebox.showinfo("An toàn", "App sẽ tự tạo System Restore Point trước khi dọn.", parent=self)
         self.c_del_btn.configure(state="disabled")
         self.c_q_btn.configure(state="disabled")
         self.c_prog.start()
@@ -865,7 +997,7 @@ class App(ctk.CTk):
         self.c_q_btn.configure(state="normal")
         if isinstance(summary, Exception):
             from tkinter import messagebox
-            messagebox.showerror("Lỗi", f"Dọn thất bại: {summary}")
+            messagebox.showerror("Lỗi", f"Dọn thất bại: {summary}", parent=self)
             return
         ResultDialog(self, "Hoàn tất dọn dẹp", fmt_summary(summary))
         self._refresh_quarantine()
@@ -882,6 +1014,9 @@ class App(ctk.CTk):
                      text_color=C_MUT, font=(FONT, 12), anchor="w",
                      wraplength=900, justify="left").pack(anchor="w", pady=(0, 8))
         self.q_tree = _dark_tree(page)
+        self.q_tree.configure(selectmode="extended")
+        self.q_tree.bind("<Control-a>", self._q_select_all)
+        self.q_tree.bind("<Control-A>", self._q_select_all)
         self.q_tree["columns"] = ("orig", "size", "date", "rule")
         self.q_tree.heading("#0", text="ID")
         self.q_tree.heading("orig", text="File gốc")
@@ -908,9 +1043,14 @@ class App(ctk.CTk):
                       command=self._q_delete).pack(side="left", padx=(0, 8))
         ctk.CTkButton(row, text="🧹 Dọn mục quá 14 ngày", height=36, fg_color=C_CARD2,
                       hover_color=C_ACC,
-                      command=self._q_purge).pack(side="left")
+                      command=self._q_purge).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(row, text="☑ Chọn tất cả", height=36, fg_color=C_CARD2,
+                      hover_color=C_ACC,
+                      command=lambda: self._q_select_all(None)).pack(side="left")
         self.q_msg = ctk.CTkLabel(page, text="", text_color=C_MUT, font=(FONT, 12))
         self.q_msg.pack(anchor="w", pady=(8, 0))
+        ctk.CTkLabel(page, text="Mẹo: bấm Ctrl+A để chọn tất cả, giữ Ctrl/Shift để chọn nhiều dòng.",
+                     text_color=C_MUT, font=(FONT, 11)).pack(anchor="w")
 
     def _refresh_quarantine(self):
         for i in self.q_tree.get_children():
@@ -923,6 +1063,10 @@ class App(ctk.CTk):
                                        it.get("rule", "")))
         self.q_msg.configure(text=f"{len(items)} mục — {Q.total_size()/GB:.2f} GB đang nằm trong khu cách ly (chưa giải phóng)")
 
+    def _q_select_all(self, _event):
+        self.q_tree.selection_set(self.q_tree.get_children())
+        return "break"
+
     def _q_restore(self):
         from tkinter import messagebox
         sel = self.q_tree.selection()
@@ -933,7 +1077,7 @@ class App(ctk.CTk):
             ok, msg = Q.restore(iid)
             msgs.append(("✅ " if ok else "⚠️ ") + msg)
             action_log.log("quarantine_restore", {"id": iid, "ok": ok})
-        messagebox.showinfo("Khôi phục", "\n".join(msgs[:10]))
+        messagebox.showinfo("Khôi phục", "\n".join(msgs[:10]), parent=self)
         self._refresh_quarantine()
         self._tick_status()
 
@@ -943,7 +1087,8 @@ class App(ctk.CTk):
         if not sel:
             return
         if not messagebox.askyesno("Xác nhận",
-                f"Xóa VĨNH VIỄN {len(sel)} mục? Dung lượng sẽ được giải phóng thật."):
+                f"Xóa VĨNH VIỄN {len(sel)} mục? Dung lượng sẽ được giải phóng thật.",
+                parent=self):
             return
         for iid in sel:
             ok, _ = Q.delete_permanent(iid)
@@ -956,14 +1101,19 @@ class App(ctk.CTk):
         n, freed = Q.purge_expired()
         action_log.log("quarantine_purge", {"removed": n, "freed": freed})
         messagebox.showinfo("Dọn quá hạn",
-                            f"Đã xóa vĩnh viễn {n} mục quá 14 ngày ({freed/GB:.2f} GB).")
+                            f"Đã xóa vĩnh viễn {n} mục quá 14 ngày ({freed/GB:.2f} GB).",
+                            parent=self)
         self._refresh_quarantine()
         self._tick_status()
 
 
 def main():
-    app = App()
-    app.mainloop()
+    while True:
+        app = App()
+        app.mainloop()
+        if not app._next_theme:
+            break
+        # theme đã được set_theme() trước khi destroy -> vòng lặp vẽ lại
 
 
 if __name__ == "__main__":

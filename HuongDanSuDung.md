@@ -1,6 +1,6 @@
 # SÁCH HƯỚNG DẪN SỬ DỤNG CLEANBOOST
 
-**Phiên bản:** 2.1 PRO (giao diện mới) — Ngày 10/10/2026
+**Phiên bản:** 2.2 PRO — Ngày 10/10/2026
 **Hỗ trợ:** Windows 10 / 11 (64-bit) và Linux (Ubuntu, Fedora...)
 
 ---
@@ -68,8 +68,14 @@ App có thanh điều hướng bên trái với 4 trang:
 | 📦 **Khu cách ly** | Xem/khôi phục/xóa vĩnh viễn file đã dọn |
 
 Góc trên bên phải có nút **"?"** — bấm vào để mở chính sách hướng dẫn này ngay
-trong app. Thanh trạng thái dưới cùng hiện dung lượng khu cách ly và đường dẫn
+trong app, và nút **🌙/☀️** để chuyển chế độ tối/sáng (app nhớ lựa chọn của bạn).
+Thanh trạng thái dưới cùng hiện dung lượng khu cách ly và đường dẫn
 file nhật ký.
+
+> **Chỉ chạy 1 bản tại 1 thời điểm:** nếu bạn mở app trong khi đã có 1 bản đang
+> chạy (kể cả bản cũ chạy quyền User còn bản mới chạy quyền Admin), app sẽ hỏi
+> bạn có muốn **tắt bản cũ để mở bản mới** không. Chọn "Có" để thay thế, "Không"
+> để giữ bản cũ.
 
 ---
 
@@ -203,6 +209,8 @@ Các nút chức năng:
   không ghi đè.)
 - **🗑 Xóa vĩnh viễn đã chọn:** xóa hẳn khỏi khu cách ly (có hỏi xác nhận).
 - **🧹 Dọn mục quá 14 ngày:** xóa vĩnh viễn các mục đã hết hạn lưu.
+- **☑ Chọn tất cả:** chọn toàn bộ danh sách (hoặc bấm **Ctrl+A** ngay trên bảng;
+  giữ Ctrl/Shift để chọn nhiều dòng lẻ).
 - **↻ Làm mới:** tải lại danh sách.
 
 Vị trí lưu trên máy bạn:
@@ -276,6 +284,19 @@ Bấm `Ctrl+C` để dừng.
 - App **chỉ chạy trên máy bạn**, không gửi dữ liệu đi đâu.
 
 ---
+
+## 10b. Cập nhật app từ GitHub (không cần tải zip)
+
+Source code được lưu tại https://github.com/manhdauvn09-manhds/cleanboost.
+Trên máy Windows, bạn chỉ cần:
+
+- **Lấy bản mới nhất:** nhấn đúp **`git_pull.bat`** (tự chạy `git pull`).
+- **Đẩy thay đổi của bạn lên:** nhấn đúp **`git_push.bat`** (tự commit theo ngày
+  giờ rồi `git push`).
+
+Yêu cầu: máy đã cài [Git for Windows](https://git-scm.com/download/win).
+Sau khi pull bản mới, nếu `requirements.txt` có thêm thư viện thì chạy lại
+`setup_windows.bat` một lần.
 
 ## 11. Xử lý sự cố thường gặp
 

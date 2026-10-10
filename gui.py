@@ -1,8 +1,11 @@
-"""Chạy giao diện CleanBoost Phase 2.
+"""Chạy giao diện CleanBoost.
 
     .venv/bin/python gui.py
 """
 from ui.app import main
+from cleaner.single_instance import ensure_single_instance
 
 if __name__ == "__main__":
-    main()
+    if ensure_single_instance():
+        main()
+

@@ -19,7 +19,7 @@ from core import privilege
 from safety import protected
 
 
-def _clean_special(rule: dict, res: dict = None):
+def _clean_special(rule: dict, res: dict = None, permanent: bool = False):
     """Xử lý các rule đặc biệt.
 
     Trả về (ok, message, freed_bytes, stats) với
@@ -29,7 +29,7 @@ def _clean_special(rule: dict, res: dict = None):
     if kind in ("update_cache", "dism_cleanup", "dism_resetbase",
                 "orphan_apps", "hibernate_off", "old_restore_points",
                 "docker_prune", "apt_clean", "snap_old", "old_kernels"):
-        return _clean_special2(rule, res)
+        return _clean_special2(rule, res, permanent)
     if kind == "recycle_bin" and sys.platform == "win32":
         try:
             SHERB = 0x1 | 0x2 | 0x4  # NOCONFIRMATION | NOPROGRESSUI | NOSOUND
@@ -69,7 +69,7 @@ def _clean_special(rule: dict, res: dict = None):
     return False, f"special '{kind}' chưa hỗ trợ dọn thật.", 0, {}
 
 
-def _clean_special2(rule: dict, res: dict = None):
+def _clean_special2(rule: dict, res: dict = None, permanent: bool = False):
     """Các special của Phase 3 (mức 2/3).
 
     Trả về (ok, message, freed_bytes, stats).
@@ -87,22 +87,35 @@ def _clean_special2(rule: dict, res: dict = None):
         return ok, msg, 0, {"deleted": 0}
     if kind == "orphan_apps":
         orphans = (res or {}).get("orphans") or orphan_detector.detect_orphans()
-        n, freed, failed = 0, 0, []
+        n, n_del, freed, failed = 0, 0, 0, []
         for o in orphans:
             p = o["path"]
             if protected.is_protected_path(p) or not os.path.exists(p):
                 continue
             try:
-                item = Q.put(p, rule["id"])
-                n += 1
-                freed += item["size"]
+                if permanent:
+                    import shutil
+                    if os.path.isdir(p) and not os.path.islink(p):
+                        shutil.rmtree(p)
+                    else:
+                        os.remove(p)
+                    n_del += 1
+                else:
+                    Q.put(p, rule["id"])
+                    n += 1
+                freed += o.get("size", 0)
             except OSError as e:
                 failed.append((p, str(e)))
-        msg = f"Đã cách ly {n} thư mục mồ côi."
+        if permanent:
+            msg = f"Đã xóa vĩnh viễn {n_del} thư mục mồ côi."
+        else:
+            msg = f"Đã cách ly {n} thư mục mồ côi."
         if failed:
             msg += f" ({len(failed)} lỗi)"
-        return True, msg, freed, {"quarantined": n,
-                                  "quarantined_bytes": freed}
+        stats = {"quarantined": n,
+                 "quarantined_bytes": 0 if permanent else freed,
+                 "deleted": n_del}
+        return True, msg, freed, stats
     if kind == "hibernate_off":
         ok, msg = sysclean.hibernate_off()
         return ok, msg, 0, {"deleted": 0}
@@ -197,7 +210,7 @@ def clean_rules(results: list, rule_ids: set, permanent: bool = False,
                 (rule["name"], "cần quyền Admin — đã bỏ qua"))
             continue
         if rule.get("special"):
-            ok, msg, freed, stats = _clean_special(rule, res)
+            ok, msg, freed, stats = _clean_special(rule, res, permanent)
             summary["specials"].append({"rule": rule["name"], "ok": ok,
                                        "message": msg})
             summary["freed"] += freed
