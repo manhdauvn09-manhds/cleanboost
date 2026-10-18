@@ -605,7 +605,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.5", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.5.1", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
@@ -1256,13 +1256,18 @@ class App(ctk.CTk):
         self.q_all_btn = ctk.CTkButton(row, text="Select all", height=36, fg_color=C_CARD2,
                                        hover_color=C_ACC,
                                        command=lambda: self._q_select_all(None))
-        self.q_all_btn.pack(side="left")
+        self.q_all_btn.pack(side="left", padx=(0, 8))
+        self.q_destroy_btn = ctk.CTkButton(row, text="Destroy All", height=36,
+                                            fg_color="#7f1d1d", hover_color="#991b1b",
+                                            command=self._q_destroy_prompt)
+        self.q_destroy_btn.pack(side="left")
         self.q_msg = ctk.CTkLabel(page, text="", text_color=C_MUT, font=(FONT, 12))
         self.q_msg.pack(anchor="w", pady=(8, 0))
         ctk.CTkLabel(page, text="Tip: press Ctrl+A to select all, hold Ctrl/Shift for multiple rows.",
                      text_color=C_MUT, font=(FONT, 11)).pack(anchor="w")
         self._q_buttons = [self.q_refresh_btn, self.q_restore_btn,
-                           self.q_delete_btn, self.q_purge_btn, self.q_all_btn]
+                           self.q_delete_btn, self.q_purge_btn, self.q_all_btn,
+                           self.q_destroy_btn]
 
     def _q_select_all(self, _event):
         self.q_tree.selection_set(self.q_tree.get_children())
@@ -1284,6 +1289,7 @@ class App(ctk.CTk):
         from tkinter import messagebox
         sel = self.q_tree.selection()
         if not sel:
+            self.q_msg.configure(text="No item selected.")
             return
 
         def work():
@@ -1307,6 +1313,7 @@ class App(ctk.CTk):
         from tkinter import messagebox
         sel = self.q_tree.selection()
         if not sel:
+            self.q_msg.configure(text="No item selected.")
             return
         if not messagebox.askyesno("Confirm",
                 f"PERMANENTLY delete {len(sel)} item(s)? This frees real disk space.",
@@ -1314,12 +1321,33 @@ class App(ctk.CTk):
             return
 
         def work():
+            deleted, failed = 0, []
             for iid in sel:
-                ok, _ = Q.delete_permanent(iid)
+                ok, msg = Q.delete_permanent(iid)
                 action_log.log("quarantine_delete", {"id": iid, "ok": ok})
-            return len(sel)
+                if ok:
+                    deleted += 1
+                else:
+                    failed.append(f"{iid}: {msg}")
+            return deleted, failed
 
-        def done(n):
+        def done(res):
+            if isinstance(res, Exception):
+                messagebox.showerror("Error", str(res), parent=self)
+                return
+            deleted, failed = res
+            if failed:
+                messagebox.showwarning(
+                    "Delete finished with failures",
+                    f"Deleted {deleted}/{len(sel)} item(s).\n\n"
+                    "Failed (these items are still in quarantine):\n"
+                    + "\n".join(failed[:5])
+                    + ("\n... (locked/in-use files cannot be deleted while "
+                       "another app holds them — close the app and try again.)"
+                       if len(failed) > 5 else
+                       "\n(Locked/in-use files cannot be deleted while "
+                       "another app holds them — close the app and try again.)"),
+                    parent=self)
             self._refresh_quarantine()
 
         self._run_bg(self._q_buttons, work, done=done,
@@ -1339,12 +1367,82 @@ class App(ctk.CTk):
                 return
             n, freed = res
             messagebox.showinfo("Clean expired",
-                                f"Permanently deleted {n} item(s) older than 14 days ({freed/GB:.2f} GB).",
+                                f"Permanently deleted {n} item(s) older than 14 days ({freed/GB:.2f} GB).\n\n"
+                                "Items newer than 14 days are NOT removed by this button — "
+                                "use Destroy All to remove everything.",
                                 parent=self)
             self._refresh_quarantine()
 
         self._run_bg(self._q_buttons, work, done=done,
                      status="Cleaning expired items...")
+
+    def _q_destroy_prompt(self):
+        items = Q.list_items()
+        if not items:
+            self.q_msg.configure(text="Quarantine is already empty.")
+            return
+        total = Q.total_size()
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Destroy All — DANGER")
+        dlg.geometry("560x340")
+        _make_modal(dlg, self)
+        ctk.CTkLabel(dlg, text="DESTROY ALL quarantined items?",
+                     font=(FONT, 16, "bold"), text_color=C_RED,
+                     wraplength=500, justify="left").pack(padx=16, pady=(16, 6))
+        ctk.CTkLabel(dlg, text=f"This PERMANENTLY deletes ALL {len(items)} item(s) "
+                              f"({total/GB:.2f} GB) in quarantine.\n\n"
+                              "NOTHING can be restored afterwards. Use this when "
+                              "you are sure you no longer need any of it.",
+                     font=(FONT, 12), text_color=C_MUT, wraplength=500,
+                     justify="left").pack(padx=16, pady=(0, 10))
+        var = tk.BooleanVar(value=False)
+        run_btn = ctk.CTkButton(dlg, text="Destroy All", fg_color="#7f1d1d",
+                                hover_color="#991b1b", state="disabled",
+                                command=lambda: (dlg.destroy(),
+                                                 self._run_destroy_all()))
+        cb = ctk.CTkCheckBox(dlg, text="I understand — destroy everything in "
+                                       "quarantine, no restore possible.",
+                             variable=var,
+                             command=lambda: run_btn.configure(
+                                 state="normal" if var.get() else "disabled"))
+        cb.pack(padx=16, pady=6, anchor="w")
+        row = ctk.CTkFrame(dlg, fg_color="transparent")
+        row.pack(pady=12)
+        ctk.CTkButton(row, text="Cancel", fg_color=C_CARD2,
+                      command=dlg.destroy).pack(side="left", padx=6)
+        run_btn.pack(side="left", padx=6)
+
+    def _run_destroy_all(self):
+        def work():
+            ok, msg, summary = Q.delete_all()
+            action_log.log("quarantine_destroy_all",
+                           {"ok": ok, "deleted": summary.get("deleted", 0),
+                            "failed": len(summary.get("failed", [])),
+                            "freed": summary.get("freed", 0)})
+            return ok, msg, summary
+
+        def done(res):
+            from tkinter import messagebox
+            if isinstance(res, Exception):
+                messagebox.showerror("Error", str(res), parent=self)
+                return
+            ok, msg, summary = res
+            failed = summary.get("failed", [])
+            if failed:
+                messagebox.showwarning(
+                    "Destroy All finished with failures",
+                    f"{msg}\nFreed: {summary.get('freed', 0)/GB:.2f} GB.\n\n"
+                    "Still in quarantine (close the app holding them and retry):\n"
+                    + "\n".join(f"{name}: {reason}" for _i, name, reason in failed[:5]),
+                    parent=self)
+            else:
+                messagebox.showinfo("Destroy All",
+                                    f"{msg}\nFreed: {summary.get('freed', 0)/GB:.2f} GB.",
+                                    parent=self)
+            self._refresh_quarantine()
+
+        self._run_bg(self._q_buttons, work, done=done,
+                     status="Destroying all quarantined items...")
 
 
     # ------------------------- Network page (v2.4) -------------------------

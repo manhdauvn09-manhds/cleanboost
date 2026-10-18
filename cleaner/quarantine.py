@@ -7,6 +7,7 @@ permanently (with confirmation).
 import json
 import os
 import shutil
+import stat
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -33,6 +34,52 @@ def _load() -> dict:
             return data if isinstance(data, dict) else {"items": []}
     except Exception:
         return {"items": []}
+
+
+def _on_rm_error(func, path, _exc_info):
+    """shutil.rmtree error handler: clear read-only, retry once.
+
+    On Windows, rmtree fails on read-only files (PermissionError) — and
+    quarantined junk often contains read-only files. Without this,
+    Delete permanently silently fails on exactly those items.
+    """
+    try:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+    except OSError:
+        pass
+
+
+def _remove_path(path):
+    """Permanently remove a file, symlink or directory tree.
+
+    Returns (ok, message). Never raises. Missing path counts as
+    removed (nothing left on disk). Read-only files are chmodded and
+    retried; locked/in-use files report the real OS error instead of
+    failing silently.
+    """
+    try:
+        if not os.path.lexists(path):
+            return True, "Already gone."
+        if os.path.isdir(path) and not os.path.islink(path):
+            try:
+                shutil.rmtree(path, onerror=_on_rm_error)
+            except OSError as e:
+                return False, f"Could not delete folder: {e}"
+            return True, "Folder deleted."
+        try:
+            os.remove(path)
+        except PermissionError:
+            try:
+                os.chmod(path, stat.S_IWRITE)
+                os.remove(path)
+            except OSError as e:
+                return False, f"Could not delete file: {e}"
+        except OSError as e:
+            return False, f"Could not delete file: {e}"
+        return True, "File deleted."
+    except Exception as e:  # noqa: BLE001
+        return False, f"Could not delete: {e}"
 
 
 def _safe_stored(stored_rel: str):
@@ -128,17 +175,54 @@ def delete_permanent(item_id: str):
         return False, "Not found in quarantine."
     stored_abs = _safe_stored(item["stored"])
     if not stored_abs:
-        return False, "Invalid path."
-    try:
-        if os.path.isdir(stored_abs) and not os.path.islink(stored_abs):
-            shutil.rmtree(stored_abs, ignore_errors=False)
-        elif os.path.lexists(stored_abs):
-            os.remove(stored_abs)
-    except OSError as e:
-        return False, f"Could not delete: {e}"
+        return False, "Invalid path — refusing to delete outside quarantine."
+    ok, msg = _remove_path(stored_abs)
+    if not ok:
+        return False, msg
     idx["items"] = [i for i in idx["items"] if i["id"] != item_id]
     _save(idx)
     return True, f"Permanently deleted: {os.path.basename(item['orig'])}"
+
+
+def delete_all():
+    """Permanently delete EVERYTHING in quarantine (Destroy All).
+
+    Returns (ok, message, summary) with summary =
+    {"deleted": int, "failed": [(id, name, reason)], "freed": bytes}.
+    Failed items stay in the index with their real error reported —
+    they are never silently kept. Never raises.
+    """
+    try:
+        idx = _load()
+        items = list(idx.get("items", []))
+        kept, failed, deleted, freed = [], [], 0, 0
+        for item in items:
+            stored_abs = _safe_stored(item.get("stored", ""))
+            if not stored_abs:
+                kept.append(item)
+                failed.append((item.get("id", "?"),
+                               os.path.basename(item.get("orig", "?")),
+                               "Invalid path — refusing to delete outside quarantine."))
+                continue
+            ok, msg = _remove_path(stored_abs)
+            if ok:
+                deleted += 1
+                freed += item.get("size", 0)
+            else:
+                kept.append(item)
+                failed.append((item.get("id", "?"),
+                               os.path.basename(item.get("orig", "?")), msg))
+        idx["items"] = kept
+        _save(idx)
+        if failed:
+            return (True,
+                    f"Destroyed {deleted} item(s), {len(failed)} failed.",
+                    {"deleted": deleted, "failed": failed, "freed": freed})
+        return (True, f"Destroyed {deleted} item(s). Quarantine is now empty.",
+                {"deleted": deleted, "failed": [], "freed": freed})
+    except Exception as e:  # noqa: BLE001
+        return False, f"Destroy All failed: {e}", {
+            "deleted": 0, "failed": [], "freed": 0}
 
 
 def purge_expired(days: int = RETENTION_DAYS):
@@ -158,15 +242,12 @@ def purge_expired(days: int = RETENTION_DAYS):
             if not stored_abs:
                 kept.append(item)
                 continue
-            try:
-                if os.path.isdir(stored_abs) and not os.path.islink(stored_abs):
-                    shutil.rmtree(stored_abs, ignore_errors=False)
-                elif os.path.lexists(stored_abs):
-                    os.remove(stored_abs)
+            ok, _msg = _remove_path(stored_abs)
+            if ok:
                 freed += item.get("size", 0)
                 removed += 1
-            except OSError:
-                kept.append(item)  # delete failed -> keep
+            else:
+                kept.append(item)  # delete failed -> keep + report via UI
         else:
             kept.append(item)
     idx["items"] = kept

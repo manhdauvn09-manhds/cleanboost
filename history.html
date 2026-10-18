@@ -38,6 +38,21 @@
 <main>
 
 <div class="version">
+  <h2>v2.5.1 — Quarantine Destroy</h2>
+  <div class="date">2026-10-19 — Fix silent Quarantine delete failures + Destroy All</div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Delete permanently no longer fails silently.</b>
+    <p class="why">Two real causes were found: (1) the UI threw away each delete result (<code>ok, _ = ...</code>) and refreshed with no message, so failed items just reappeared with zero explanation; (2) on Windows, <code>shutil.rmtree</code> / <code>os.remove</code> raise PermissionError on read-only files — and quarantined junk often contains read-only files — so those items could never be deleted. Deletes now clear the read-only flag and retry, and every failure is shown with its real OS error. "Clean items over 14 days" also never touched recent items by design — the dialog now says so.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>"Destroy All" button on the Quarantine tab (<code>Q.delete_all()</code>).</b>
+    <p class="why">One click empties the whole quarantine: red warning dialog + "I understand" checkbox required before running, background thread under the busy-guard, every action logged. Result dialog reports deleted count, freed GB, and any items that failed (e.g. locked/in-use files) with their reason — failed items stay listed instead of vanishing silently. Clicking Delete/Restore with nothing selected now says "No item selected" instead of doing nothing.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.5 — "Smart"</h2>
   <div class="date">2026-10-19 — DNS Switcher, Diagnostics, Hog Finder, Startup Manager, Adapter/Deep Reset</div>
 
