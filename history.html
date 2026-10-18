@@ -38,6 +38,41 @@
 <main>
 
 <div class="version">
+  <h2>v2.5 — "Smart"</h2>
+  <div class="date">2026-10-19 — DNS Switcher, Diagnostics, Hog Finder, Startup Manager, Adapter/Deep Reset</div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>DNS Switcher (<code>network/dns.py</code>) on the Network tab.</b>
+    <p class="why">Switch to Cloudflare / Google / Quad9 or back to Auto (ISP) in one click. The current DNS is <b>always saved to <code>dns_backup.json</code> before any change</b>, so Undo restores exactly what was there. "Measure fastest DNS" resolves via each provider on this PC (nslookup) and suggests the fastest. Changing DNS needs Admin and says so clearly when it is missing.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>Network Diagnostics (<code>network/diag.py</code>) — one click, auto conclusion.</b>
+    <p class="why">Checks gateway ping, external pings (1.1.1.1 / 8.8.8.8), DNS resolve time, established connections + top remote IPs, and WiFi signal — then concludes by exclusion: WiFi/LAN problem, ISP/route problem (try Quick Refresh), slow DNS (try DNS Switcher), or network fine (lag is from the app/server).</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>Bandwidth Hog Finder (<code>network/hogs.py</code>).</b>
+    <p class="why">Measures real total up/down throughput (two <code>net_io_counters</code> snapshots) and lists apps by active connection count, with End task per app through the protection layer. Honest limit, stated in the UI: psutil cannot attribute bytes to individual processes, so rows are ranked by connections, not per-app bytes.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>Startup Manager (<code>core/startup.py</code>) — new "Startup" tab.</b>
+    <p class="why">Lists HKCU/HKLM Run entries plus both Startup folders. Disabling NEVER deletes: the entry is renamed with the <code>CleanBoost_disabled_</code> prefix and one click re-enables it. Protected entries (Windows Security, audio/network drivers) cannot be disabled. HKLM changes need Admin.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>Adapter Reset + Deep Reset (<code>network/refresh.py</code>).</b>
+    <p class="why">Adapter Reset: 3-second countdown dialog with Cancel, then Disable → wait 3s → Enable, verified for up to 30s. Deep Reset: red warning + "I understand" checkbox required before running <code>netsh winsock reset</code> + <code>netsh int ip reset</code>, with a clear "restart your PC" message. Both need Admin and log every step.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Note</span><b>Windows-only behaviour verified on real Windows only.</b>
+    <p class="why">The dev machine is Linux, so <code>netsh</code> / registry / <code>Disable-NetAdapter</code> paths could only be checked with mocked unit tests here. Real verification checklist: change DNS then Undo back to the exact old DNS; disable a startup app then re-enable it; Adapter Reset reconnects WiFi within 30s.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.4 — "Fresh Network"</h2>
   <div class="date">2026-10-19 — Network tab, Health Score, Optimize in 1 Click</div>
 

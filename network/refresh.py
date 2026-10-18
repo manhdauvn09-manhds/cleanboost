@@ -95,3 +95,130 @@ def quick_refresh(progress_cb=None):
     if not vok:
         return True, f"Quick Refresh done, but verify failed: {vmsg}", steps
     return True, "Quick Refresh done — DNS flushed, new IP obtained.", steps
+
+
+def _powershell(command):
+    """Run one PowerShell command. Returns (ok, message, stdout)."""
+    return _run(["powershell", "-NoProfile", "-NonInteractive",
+                 "-Command", command], timeout=60)
+
+
+def adapter_reset(adapter=None, cancel_event=None, progress_cb=None):
+    """Disable + re-enable one network adapter (v2.5, A.2).
+
+    The UI owns the 3-second countdown + Cancel button; this function
+    checks cancel_event once right before disabling (abort if set) and
+    then performs the reset. Needs Admin. Network drops for ~5-10s.
+    Verifies the adapter comes back within ~30s.
+
+    Returns (ok, message, steps).
+    """
+    steps = []
+    try:
+        if sys.platform != "win32":
+            return False, "Adapter Reset requires Windows.", steps
+        if not _is_admin():
+            return (False,
+                    "Admin rights required for Adapter Reset. "
+                    "Run CleanBoost as Administrator.", steps)
+        if adapter is None:
+            try:
+                from network import info as net_info
+                _ok, _msg, data = net_info.get_network_info()
+                adapter = data.get("adapter_name", "")
+            except Exception:
+                adapter = ""
+        if not adapter or '"' in adapter:
+            return False, "Could not find a valid network adapter.", steps
+        if cancel_event is not None and cancel_event.is_set():
+            return False, "Adapter Reset cancelled.", steps
+
+        plan = [
+            ("disable", f'Disable-NetAdapter -Name "{adapter}" -Confirm:$false'),
+            ("wait", None),
+            ("enable", f'Enable-NetAdapter -Name "{adapter}" -Confirm:$false'),
+        ]
+        for i, (name, cmd) in enumerate(plan):
+            if progress_cb:
+                progress_cb(i, len(plan) + 1, name)
+            if name == "wait":
+                import time as _time
+                _time.sleep(3)
+                steps.append({"step": "wait", "ok": True,
+                              "message": "Waited 3 seconds."})
+                continue
+            ok, msg, _out = _powershell(cmd)
+            steps.append({"step": name, "ok": ok, "message": msg})
+            action_log.log("network_adapter_reset_step",
+                           {"step": name, "adapter": adapter, "ok": ok})
+            if not ok:
+                return False, f"Adapter Reset failed at {name}: {msg}", steps
+
+        # Verify: adapter back UP + gateway reachable, up to ~30s.
+        if progress_cb:
+            progress_cb(len(plan), len(plan) + 1, "verify")
+        import time as _time
+        verified = False
+        for _ in range(10):
+            try:
+                import psutil
+                stats = psutil.net_if_stats()
+                up = stats.get(adapter).isup if stats.get(adapter) else False
+            except Exception:
+                up = False
+            if up:
+                vok, _vmsg = _verify()
+                if vok:
+                    verified = True
+                    break
+            _time.sleep(3)
+        steps.append({"step": "verify", "ok": verified,
+                      "message": "Adapter is back and reachable."
+                      if verified else "Adapter did not come back within 30s."})
+        action_log.log("network_adapter_reset",
+                       {"adapter": adapter, "ok": verified})
+        if verified:
+            return True, f"Adapter '{adapter}' reset — connection restored.", steps
+        return False, ("Adapter was reset but the connection did not come "
+                       "back within 30s. Check WiFi / cable.", steps)
+    except Exception as e:  # noqa: BLE001
+        return False, f"Adapter Reset failed: {e}", steps
+
+
+def deep_reset():
+    """Reset Winsock + TCP/IP stack (v2.5, A.4).
+
+    Needs Admin. The UI shows a red warning + "I understand" checkbox
+    before calling this. A RESTART is required afterwards.
+    Returns (ok, message, steps).
+    """
+    steps = []
+    try:
+        if sys.platform != "win32":
+            return False, "Deep Reset requires Windows.", steps
+        if not _is_admin():
+            return (False,
+                    "Admin rights required for Deep Reset. "
+                    "Run CleanBoost as Administrator.", steps)
+        for name, argv in (("winsock", ["netsh", "winsock", "reset"]),
+                           ("tcpip", ["netsh", "int", "ip", "reset"])):
+            ok, msg, _out = _run(argv, timeout=60)
+            steps.append({"step": name, "ok": ok, "message": msg})
+            action_log.log("network_deep_reset_step",
+                           {"step": name, "ok": ok})
+            if not ok:
+                return False, f"Deep Reset failed at {name}: {msg}", steps
+        action_log.log("network_deep_reset", {"ok": True})
+        return (True,
+                "Deep Reset done — RESTART your PC now for it to take effect.",
+                steps)
+    except Exception as e:  # noqa: BLE001
+        return False, f"Deep Reset failed: {e}", steps
+
+
+def _is_admin():
+    try:
+        from core import privilege
+        return privilege.is_admin()
+    except Exception:
+        return False

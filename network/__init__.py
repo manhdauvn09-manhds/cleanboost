@@ -5,6 +5,6 @@ All public functions follow the CleanBoost safety rules:
 - data functions return (ok, message, data) and never raise;
 - read-only functions need no admin; anything needing admin reports it.
 """
-from network import info, ports, speed, refresh
+from network import info, ports, speed, refresh, dns, diag, hogs
 
-__all__ = ["info", "ports", "speed", "refresh"]
+__all__ = ["info", "ports", "speed", "refresh", "dns", "diag", "hogs"]

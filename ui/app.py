@@ -17,8 +17,10 @@ import customtkinter as ctk  # noqa: E402
 
 from core import privilege, system_info, process_manager, memory_cleaner  # noqa: E402
 from core import health as health_mod, optimize as optimizer  # noqa: E402
+from core import startup as startup_mod  # noqa: E402
 from network import info as net_info, ports as net_ports  # noqa: E402
 from network import speed as net_speed, refresh as net_refresh  # noqa: E402
+from network import dns as net_dns, diag as net_diag, hogs as net_hogs  # noqa: E402
 from cleaner import engine, scanner, quarantine as Q  # noqa: E402
 from cleaner.clean import clean_rules, fmt_summary  # noqa: E402
 from cleaner import action_log  # noqa: E402
@@ -481,9 +483,10 @@ PAGES = [
     ("clean", "Disk Cleaner"),
     ("quar", "Quarantine"),
     ("net", "Network"),
+    ("startup", "Startup"),
 ]
 PAGE_ICONS = {"dash": "📊", "proc": "⚙️", "clean": "🧹", "quar": "📦",
-              "net": "🌐"}
+              "net": "🌐", "startup": "🚀"}
 
 
 class App(ctk.CTk):
@@ -506,6 +509,7 @@ class App(ctk.CTk):
         self._scan_checks = {}
         self._proc_rows = []
         self._net_loaded = False
+        self._startup_loaded = False
         self._net_before = None
         self._net_after = None
         self._proc_sort = ("rss", True)
@@ -601,7 +605,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.4", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.5", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
@@ -642,6 +646,7 @@ class App(ctk.CTk):
         self._build_cleaner(self._pages["clean"][0])
         self._build_quarantine(self._pages["quar"][0])
         self._build_network(self._pages["net"][0])
+        self._build_startup(self._pages["startup"][0])
 
         # status bar
         sb = ctk.CTkFrame(main, fg_color=C_SIDEBAR, height=30, corner_radius=0)
@@ -676,6 +681,9 @@ class App(ctk.CTk):
             self._net_loaded = True
             self._refresh_net_info()
             self._refresh_ports()
+        if key == "startup" and not getattr(self, "_startup_loaded", False):
+            self._startup_loaded = True
+            self._refresh_startup()
 
     def _tick_status(self):
         def work():
@@ -1445,6 +1453,113 @@ class App(ctk.CTk):
                                             justify="left", anchor="w")
         self.net_refresh_msg.pack(anchor="w", pady=(0, 8))
 
+        # --- DNS Switcher (v2.5) ---
+        ctk.CTkLabel(scroll, text="DNS Switcher", font=(FONT, 14, "bold"),
+                     anchor="w").pack(anchor="w", pady=(12, 4))
+        ctk.CTkLabel(scroll, text="Switching DNS needs Admin. Your current DNS is "
+                                  "saved before every change — Undo restores it exactly.",
+                     text_color=C_MUT, font=(FONT, 11), anchor="w",
+                     wraplength=900, justify="left").pack(anchor="w", pady=(0, 4))
+        self.dns_current_lbl = ctk.CTkLabel(scroll, text="Current DNS: -",
+                                            font=(FONT, 12), anchor="w")
+        self.dns_current_lbl.pack(anchor="w", pady=(0, 4))
+        drow = ctk.CTkFrame(scroll, fg_color="transparent")
+        drow.pack(fill="x", pady=(0, 4))
+        self.dns_preset_btns = {}
+        for name in ("Cloudflare", "Google", "Quad9"):
+            b = ctk.CTkButton(drow, text=name, width=110,
+                              fg_color=C_CARD2, hover_color=C_ACC,
+                              command=lambda n=name: self._set_dns_preset(n))
+            b.pack(side="left", padx=(0, 8))
+            self.dns_preset_btns[name] = b
+        self.dns_auto_btn = ctk.CTkButton(drow, text="Auto (ISP)", width=110,
+                                          fg_color=C_CARD2, hover_color=C_ACC,
+                                          command=self._set_dns_auto_ui)
+        self.dns_auto_btn.pack(side="left", padx=(0, 8))
+        self.dns_undo_btn = ctk.CTkButton(drow, text="Undo DNS change", width=140,
+                                          fg_color="#b45309", hover_color="#92400e",
+                                          command=self._undo_dns)
+        self.dns_undo_btn.pack(side="left")
+        drow2 = ctk.CTkFrame(scroll, fg_color="transparent")
+        drow2.pack(fill="x", pady=(0, 4))
+        self.dns_measure_btn = ctk.CTkButton(drow2, text="Measure fastest DNS",
+                                             width=170, fg_color=C_CARD2,
+                                             hover_color=C_ACC,
+                                             command=self._measure_dns)
+        self.dns_measure_btn.pack(side="left", padx=(0, 8))
+        self.dns_suggest_lbl = ctk.CTkLabel(drow2, text="", text_color=C_MUT,
+                                            font=(FONT, 11))
+        self.dns_suggest_lbl.pack(side="left")
+        self.dns_msg = ctk.CTkLabel(scroll, text="", text_color=C_MUT,
+                                    font=(FONT, 11), wraplength=900,
+                                    justify="left", anchor="w")
+        self.dns_msg.pack(anchor="w", pady=(0, 12))
+
+        # --- Network Diagnostics (v2.5) ---
+        ctk.CTkLabel(scroll, text="Network Diagnostics", font=(FONT, 14, "bold"),
+                     anchor="w").pack(anchor="w", pady=(0, 4))
+        self.diag_btn = ctk.CTkButton(scroll, text="Run Diagnostics", width=160,
+                                      fg_color=C_CARD2, hover_color=C_ACC,
+                                      command=self._run_diagnostics)
+        self.diag_btn.pack(anchor="w", pady=(0, 4))
+        self.diag_box = ctk.CTkTextbox(scroll, font=(MONO, 12), height=170)
+        self.diag_box.pack(fill="x", pady=(0, 4))
+        self.diag_box.insert("1.0", "Press Run Diagnostics.")
+        self.diag_box.configure(state="disabled")
+
+        # --- Bandwidth Hog Finder (v2.5) ---
+        ctk.CTkLabel(scroll, text="Bandwidth Hog Finder", font=(FONT, 14, "bold"),
+                     anchor="w").pack(anchor="w", pady=(12, 4))
+        ctk.CTkLabel(scroll, text="Ranked by active connections (per-app byte counts "
+                                  "are not available).",
+                     text_color=C_MUT, font=(FONT, 11), anchor="w").pack(anchor="w")
+        self.hogs_total_lbl = ctk.CTkLabel(scroll, text="Total: -",
+                                           font=(FONT, 12), anchor="w")
+        self.hogs_total_lbl.pack(anchor="w", pady=(0, 4))
+        self.hogs_tree = _dark_tree(scroll)
+        self.hogs_tree["columns"] = ("conn", "remote")
+        self.hogs_tree.heading("#0", text="Process (PID)")
+        self.hogs_tree.heading("conn", text="Connections")
+        self.hogs_tree.heading("remote", text="Remote IPs")
+        self.hogs_tree.column("#0", width=300)
+        self.hogs_tree.column("conn", width=120)
+        self.hogs_tree.column("remote", width=380)
+        self.hogs_tree.pack(fill="x", pady=(0, 4))
+        hrow = ctk.CTkFrame(scroll, fg_color="transparent")
+        hrow.pack(fill="x", pady=(0, 4))
+        self.hogs_btn = ctk.CTkButton(hrow, text="Find Bandwidth Hogs", width=170,
+                                      fg_color=C_CARD2, hover_color=C_ACC,
+                                      command=self._find_hogs)
+        self.hogs_btn.pack(side="left", padx=(0, 8))
+        self.hogs_kill_btn = ctk.CTkButton(hrow, text="End selected", width=130,
+                                           fg_color="#b91c1c", hover_color="#991b1b",
+                                           command=self._end_hog)
+        self.hogs_kill_btn.pack(side="left")
+        self.hogs_msg = ctk.CTkLabel(hrow, text="", text_color=C_MUT, font=(FONT, 11))
+        self.hogs_msg.pack(side="left", padx=10)
+
+        # --- Adapter Reset & Deep Reset (v2.5) ---
+        ctk.CTkLabel(scroll, text="Adapter Reset & Deep Reset", font=(FONT, 14, "bold"),
+                     anchor="w").pack(anchor="w", pady=(12, 4))
+        ctk.CTkLabel(scroll, text="Adapter Reset turns your network off for ~5-10 seconds. "
+                                  "Deep Reset resets Winsock & TCP/IP — a PC restart is required afterwards.",
+                     text_color=C_RED, font=(FONT, 11, "bold"), anchor="w",
+                     wraplength=900, justify="left").pack(anchor="w", pady=(0, 4))
+        rrow = ctk.CTkFrame(scroll, fg_color="transparent")
+        rrow.pack(fill="x", pady=(0, 4))
+        self.adapter_reset_btn = ctk.CTkButton(rrow, text="Adapter Reset...", width=150,
+                                               fg_color="#b45309", hover_color="#92400e",
+                                               command=self._adapter_reset_prompt)
+        self.adapter_reset_btn.pack(side="left", padx=(0, 8))
+        self.deep_reset_btn = ctk.CTkButton(rrow, text="Deep Reset...", width=150,
+                                            fg_color="#b91c1c", hover_color="#991b1b",
+                                            command=self._deep_reset_prompt)
+        self.deep_reset_btn.pack(side="left")
+        self.reset_msg = ctk.CTkLabel(scroll, text="", text_color=C_MUT,
+                                      font=(FONT, 11), wraplength=900,
+                                      justify="left", anchor="w")
+        self.reset_msg.pack(anchor="w", pady=(0, 8))
+
     def _refresh_net_info(self):
         self.net_info_msg.configure(text="Loading...")
 
@@ -1579,6 +1694,442 @@ class App(ctk.CTk):
 
         self._run_bg([self.net_refresh_btn], work, done=done,
                      status="Refreshing network...")
+
+    # ------------------------- Network v2.5 handlers -------------------------
+    def _dns_buttons(self):
+        return (list(self.dns_preset_btns.values())
+                + [self.dns_auto_btn, self.dns_undo_btn, self.dns_measure_btn])
+
+    def _refresh_dns_current(self):
+        def work():
+            return net_dns.get_current_dns()
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.dns_current_lbl.configure(text=f"Current DNS: error ({res})")
+                return
+            _ok, _msg, data = res
+            dns = data.get("dns") or []
+            self.dns_current_lbl.configure(
+                text=f"Current DNS ({data.get('adapter', '')}): "
+                     + (", ".join(dns) if dns else "automatic / unknown"))
+
+        self._run_bg([self.dns_measure_btn], work, done=done,
+                     status="Reading DNS...")
+
+    def _set_dns_preset(self, name):
+        from tkinter import messagebox
+        primary, secondary = net_dns.PRESETS[name]
+        if not messagebox.askyesno(
+                "Change DNS",
+                f"Switch DNS to {name} ({primary} / {secondary})?\n\n"
+                "Your current DNS will be saved first — Undo restores it.",
+                parent=self):
+            return
+        self.dns_msg.configure(text="")
+
+        def work():
+            return net_dns.set_dns(primary, secondary)
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.dns_msg.configure(text=f"Error: {res}")
+                return
+            ok, msg = res
+            self.dns_msg.configure(text=msg, text_color=C_GRN if ok else C_RED)
+            self._refresh_dns_current()
+
+        self._run_bg(self._dns_buttons(), work, done=done,
+                     status="Changing DNS...")
+
+    def _set_dns_auto_ui(self):
+        from tkinter import messagebox
+        if not messagebox.askyesno(
+                "Change DNS",
+                "Switch DNS back to automatic (ISP / DHCP)?\n\n"
+                "Your current DNS will be saved first — Undo restores it.",
+                parent=self):
+            return
+        self.dns_msg.configure(text="")
+
+        def work():
+            return net_dns.set_dns_auto()
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.dns_msg.configure(text=f"Error: {res}")
+                return
+            ok, msg = res
+            self.dns_msg.configure(text=msg, text_color=C_GRN if ok else C_RED)
+            self._refresh_dns_current()
+
+        self._run_bg(self._dns_buttons(), work, done=done,
+                     status="Changing DNS...")
+
+    def _undo_dns(self):
+        self.dns_msg.configure(text="")
+
+        def work():
+            return net_dns.restore_dns()
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.dns_msg.configure(text=f"Error: {res}")
+                return
+            ok, msg = res
+            self.dns_msg.configure(text=msg, text_color=C_GRN if ok else C_RED)
+            self._refresh_dns_current()
+
+        self._run_bg(self._dns_buttons(), work, done=done,
+                     status="Restoring DNS...")
+
+    def _measure_dns(self):
+        self.dns_suggest_lbl.configure(text="Measuring...")
+
+        def work():
+            return net_dns.measure_dns()
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.dns_suggest_lbl.configure(text=f"Error: {res}")
+                return
+            ok, msg, results = res
+            parts = []
+            for r in results:
+                parts.append(f"{r['name']}: "
+                             + (f"{r['avg_ms']:.0f} ms" if r["ok"] else "failed"))
+            self.dns_suggest_lbl.configure(text=msg + "  (" + "; ".join(parts) + ")")
+
+        self._run_bg([self.dns_measure_btn], work, done=done,
+                     status="Measuring DNS speed...")
+
+    def _run_diagnostics(self):
+        self.diag_box.configure(state="normal")
+        self.diag_box.delete("1.0", "end")
+        self.diag_box.insert("1.0", "Running diagnostics...")
+        self.diag_box.configure(state="disabled")
+
+        def work():
+            return net_diag.run_diagnostics()
+
+        def done(res):
+            if isinstance(res, Exception):
+                text = f"Diagnostics error: {res}"
+            else:
+                _ok, _msg, data = res
+                text = net_diag.format_diagnostics(data)
+            self.diag_box.configure(state="normal")
+            self.diag_box.delete("1.0", "end")
+            self.diag_box.insert("1.0", text)
+            self.diag_box.configure(state="disabled")
+
+        self._run_bg([self.diag_btn], work, done=done,
+                     status="Running diagnostics...")
+
+    def _find_hogs(self):
+        self.hogs_msg.configure(text="Measuring (3s)...")
+
+        def work():
+            return net_hogs.get_bandwidth_hogs()
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.hogs_msg.configure(text=f"Error: {res}")
+                return
+            ok, msg, data = res
+            for i in self.hogs_tree.get_children():
+                self.hogs_tree.delete(i)
+            self._hog_rows = data.get("rows", [])
+            for idx, r in enumerate(self._hog_rows):
+                self.hogs_tree.insert(
+                    "", "end", iid=str(idx),
+                    text=f"{r['process']} (PID {r['pid']})",
+                    values=(r["connections"],
+                            ", ".join(r["remote_ips"][:3])))
+            self.hogs_total_lbl.configure(
+                text=f"Total: {data['recv_per_sec'] / 1024:.0f} KB/s down, "
+                     f"{data['sent_per_sec'] / 1024:.0f} KB/s up")
+            self.hogs_msg.configure(text=msg)
+
+        self._run_bg([self.hogs_btn], work, done=done,
+                     status="Measuring bandwidth...")
+
+    def _end_hog(self):
+        from tkinter import messagebox
+        sel = self.hogs_tree.selection()
+        if not sel:
+            self.hogs_msg.configure(text="No app selected.")
+            return
+        targets = []
+        for iid in sel:
+            r = self._hog_rows[int(iid)]
+            if protected.check_process(r["process"], r["pid"]) == "warn":
+                if not messagebox.askyesno(
+                        "Confirm",
+                        f"{r['process']} is a sensitive system process.\n"
+                        "Close it anyway?", parent=self):
+                    continue
+            targets.append((r["pid"], r["process"]))
+
+        def work():
+            n = 0
+            for pid, _name in targets:
+                ok, _ = process_manager.kill_process(pid, force=False)
+                n += ok
+            return n
+
+        def done(n):
+            if isinstance(n, Exception):
+                self.hogs_msg.configure(text=f"Error: {n}")
+                return
+            action_log.log("kill_hogs", {"killed": n})
+            self.hogs_msg.configure(text=f"Closed {n}/{len(targets)} app(s).")
+            self._find_hogs()
+
+        self._run_bg([self.hogs_kill_btn], work, done=done,
+                     status="Closing apps...")
+
+    def _adapter_reset_prompt(self):
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Adapter Reset")
+        dlg.geometry("500x260")
+        _make_modal(dlg, self)
+        ctk.CTkLabel(dlg, text="Adapter Reset will turn your network OFF "
+                              "for ~5-10 seconds.",
+                     font=(FONT, 13, "bold"), text_color=C_RED,
+                     wraplength=440, justify="left").pack(padx=16, pady=(16, 6))
+        ctk.CTkLabel(dlg, text="Use it when WiFi is stuck or the adapter "
+                              "behaves strangely. Your connection should come "
+                              "back automatically.",
+                     font=(FONT, 12), text_color=C_MUT, wraplength=440,
+                     justify="left").pack(padx=16, pady=(0, 10))
+        count_lbl = ctk.CTkLabel(dlg, text="Resetting in 3...",
+                                 font=(FONT, 14, "bold"))
+        count_lbl.pack(pady=6)
+        state = {"cancelled": False, "n": 3}
+
+        def cancel():
+            state["cancelled"] = True
+            dlg.destroy()
+
+        def reset_now():
+            state["cancelled"] = True
+            dlg.destroy()
+            self._run_adapter_reset()
+
+        row = ctk.CTkFrame(dlg, fg_color="transparent")
+        row.pack(pady=12)
+        ctk.CTkButton(row, text="Cancel", fg_color=C_CARD2,
+                      command=cancel).pack(side="left", padx=6)
+        ctk.CTkButton(row, text="Reset Now", fg_color="#b45309",
+                      hover_color="#92400e", command=reset_now).pack(side="left", padx=6)
+
+        def tick():
+            if state["cancelled"]:
+                return
+            try:
+                if not dlg.winfo_exists():
+                    return
+            except Exception:  # noqa: BLE001
+                return
+            if state["n"] <= 0:
+                state["cancelled"] = True
+                try:
+                    dlg.destroy()
+                except Exception:  # noqa: BLE001
+                    pass
+                self._run_adapter_reset()
+                return
+            count_lbl.configure(text=f"Resetting in {state['n']}... "
+                                     "(press Cancel to stop)")
+            state["n"] -= 1
+            dlg.after(1000, tick)
+
+        tick()
+
+    def _run_adapter_reset(self):
+        self.reset_msg.configure(text="Resetting adapter...")
+
+        def progress(i, total, label):
+            try:
+                self.after(0, lambda: self.reset_msg.configure(
+                    text=f"Adapter Reset: {label}..."))
+            except Exception:  # noqa: BLE001
+                pass
+
+        def work():
+            return net_refresh.adapter_reset(progress_cb=progress)
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.reset_msg.configure(text=f"Error: {res}")
+                return
+            ok, msg, steps = res
+            lines = [msg]
+            for s in steps:
+                lines.append(f"- {s['step']}: "
+                             + ("OK" if s["ok"] else f"FAILED — {s['message']}"))
+            self.reset_msg.configure(text="\n".join(lines),
+                                     text_color=C_GRN if ok else C_RED)
+            self._refresh_net_info()
+
+        self._run_bg([self.adapter_reset_btn], work, done=done,
+                     status="Resetting adapter...")
+
+    def _deep_reset_prompt(self):
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Deep Reset — DANGER")
+        dlg.geometry("520x320")
+        _make_modal(dlg, self)
+        ctk.CTkLabel(dlg, text="Deep Reset resets Winsock & TCP/IP to defaults.",
+                     font=(FONT, 14, "bold"), text_color=C_RED,
+                     wraplength=460, justify="left").pack(padx=16, pady=(16, 6))
+        ctk.CTkLabel(dlg, text="Only use this when Quick Refresh and Adapter Reset "
+                              "did NOT fix the connection.\n\n"
+                              "You MUST restart your PC afterwards for it to take effect.",
+                     font=(FONT, 12), text_color=C_MUT, wraplength=460,
+                     justify="left").pack(padx=16, pady=(0, 10))
+        var = tk.BooleanVar(value=False)
+        run_btn = ctk.CTkButton(dlg, text="Run Deep Reset", fg_color="#b91c1c",
+                                hover_color="#991b1b", state="disabled",
+                                command=lambda: (dlg.destroy(),
+                                                 self._run_deep_reset()))
+        cb = ctk.CTkCheckBox(dlg, text="I understand — reset Winsock & TCP/IP "
+                                       "and I will restart my PC.",
+                             variable=var,
+                             command=lambda: run_btn.configure(
+                                 state="normal" if var.get() else "disabled"))
+        cb.pack(padx=16, pady=6, anchor="w")
+        row = ctk.CTkFrame(dlg, fg_color="transparent")
+        row.pack(pady=12)
+        ctk.CTkButton(row, text="Cancel", fg_color=C_CARD2,
+                      command=dlg.destroy).pack(side="left", padx=6)
+        run_btn.pack(side="left", padx=6)
+
+    def _run_deep_reset(self):
+        self.reset_msg.configure(text="Running Deep Reset...")
+
+        def work():
+            return net_refresh.deep_reset()
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.reset_msg.configure(text=f"Error: {res}")
+                return
+            ok, msg, steps = res
+            lines = [msg]
+            for s in steps:
+                lines.append(f"- {s['step']}: "
+                             + ("OK" if s["ok"] else f"FAILED — {s['message']}"))
+            self.reset_msg.configure(text="\n".join(lines),
+                                     text_color=C_GRN if ok else C_RED)
+
+        self._run_bg([self.deep_reset_btn], work, done=done,
+                     status="Running Deep Reset...")
+
+    # ------------------------- Startup page (v2.5) -------------------------
+    def _build_startup(self, page):
+        ctk.CTkLabel(page, text="Apps that start with Windows. Disabling renames the "
+                                "entry (restorable) — nothing is deleted. Protected "
+                                "entries (security / drivers) cannot be disabled.",
+                     text_color=C_MUT, font=(FONT, 12), anchor="w",
+                     wraplength=900, justify="left").pack(anchor="w", pady=(0, 8))
+        self.s_tree = _dark_tree(page)
+        self.s_tree["columns"] = ("location", "status", "protected")
+        self.s_tree.heading("#0", text="App")
+        self.s_tree.heading("location", text="Location")
+        self.s_tree.heading("status", text="Status")
+        self.s_tree.heading("protected", text="Protected")
+        self.s_tree.column("#0", width=320)
+        self.s_tree.column("location", width=220)
+        self.s_tree.column("status", width=110)
+        self.s_tree.column("protected", width=110)
+        self.s_tree.pack(fill="both", expand=True, pady=(0, 8))
+        self.s_tree.tag_configure("disabled", foreground=C_MUT)
+        self.s_tree.tag_configure("prot", foreground=C_YLW)
+
+        row = ctk.CTkFrame(page, fg_color="transparent")
+        row.pack(fill="x")
+        self.s_refresh_btn = ctk.CTkButton(row, text="Refresh", height=36,
+                                           fg_color=C_CARD2, hover_color=C_ACC,
+                                           command=self._refresh_startup)
+        self.s_refresh_btn.pack(side="left", padx=(0, 8))
+        self.s_disable_btn = ctk.CTkButton(row, text="Disable selected", height=36,
+                                           fg_color="#b45309", hover_color="#92400e",
+                                           command=lambda: self._toggle_startup(False))
+        self.s_disable_btn.pack(side="left", padx=(0, 8))
+        self.s_enable_btn = ctk.CTkButton(row, text="Enable selected", height=36,
+                                          fg_color="#047857", hover_color="#065f46",
+                                          command=lambda: self._toggle_startup(True))
+        self.s_enable_btn.pack(side="left")
+        self.s_msg = ctk.CTkLabel(page, text="", text_color=C_MUT, font=(FONT, 12))
+        self.s_msg.pack(anchor="w", pady=(8, 0))
+
+    def _refresh_startup(self):
+        self.s_msg.configure(text="Loading...")
+
+        def work():
+            return startup_mod.list_startup()
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.s_msg.configure(text=f"Error: {res}")
+                return
+            ok, msg, items = res
+            for i in self.s_tree.get_children():
+                self.s_tree.delete(i)
+            self._startup_rows = items
+            for idx, it in enumerate(items):
+                tags = []
+                if it["protected"]:
+                    tags.append("prot")
+                if not it["enabled"]:
+                    tags.append("disabled")
+                self.s_tree.insert("", "end", iid=str(idx), text=it["name"],
+                                   values=(it["location"],
+                                           "Enabled" if it["enabled"] else "Disabled",
+                                           "Yes" if it["protected"] else "No"),
+                                   tags=tuple(tags))
+            self.s_msg.configure(text=msg if ok else msg)
+
+        self._run_bg([self.s_refresh_btn], work, done=done,
+                     status="Loading startup apps...")
+
+    def _toggle_startup(self, enable):
+        sel = self.s_tree.selection()
+        if not sel:
+            self.s_msg.configure(text="No startup entry selected.")
+            return
+        targets = []
+        for iid in sel:
+            it = self._startup_rows[int(iid)]
+            if it["protected"] and not enable:
+                self.s_msg.configure(
+                    text=f"'{it['name']}' is protected and cannot be disabled.")
+                return
+            if it["enabled"] == enable:
+                continue
+            targets.append(it)
+        if not targets:
+            self.s_msg.configure(text="Selected entries are already in that state.")
+            return
+
+        def work():
+            msgs = []
+            for it in targets:
+                ok, msg = startup_mod.set_enabled(it["key"], it["location"], enable)
+                msgs.append(("OK " if ok else "! ") + msg)
+            return msgs
+
+        def done(msgs):
+            if isinstance(msgs, Exception):
+                self.s_msg.configure(text=f"Error: {msgs}")
+                return
+            self.s_msg.configure(text=" | ".join(msgs[:3]))
+            self._refresh_startup()
+
+        self._run_bg([self.s_disable_btn, self.s_enable_btn], work, done=done,
+                     status="Changing startup entries...")
 
 
 def main():
