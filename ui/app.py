@@ -16,6 +16,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import customtkinter as ctk  # noqa: E402
 
 from core import privilege, system_info, process_manager, memory_cleaner  # noqa: E402
+from core import health as health_mod, optimize as optimizer  # noqa: E402
+from network import info as net_info, ports as net_ports  # noqa: E402
+from network import speed as net_speed, refresh as net_refresh  # noqa: E402
 from cleaner import engine, scanner, quarantine as Q  # noqa: E402
 from cleaner.clean import clean_rules, fmt_summary  # noqa: E402
 from cleaner import action_log  # noqa: E402
@@ -477,8 +480,10 @@ PAGES = [
     ("proc", "Processes"),
     ("clean", "Disk Cleaner"),
     ("quar", "Quarantine"),
+    ("net", "Network"),
 ]
-PAGE_ICONS = {"dash": "📊", "proc": "⚙️", "clean": "🧹", "quar": "📦"}
+PAGE_ICONS = {"dash": "📊", "proc": "⚙️", "clean": "🧹", "quar": "📦",
+              "net": "🌐"}
 
 
 class App(ctk.CTk):
@@ -500,6 +505,9 @@ class App(ctk.CTk):
         self._last_scan = []
         self._scan_checks = {}
         self._proc_rows = []
+        self._net_loaded = False
+        self._net_before = None
+        self._net_after = None
         self._proc_sort = ("rss", True)
         self._nav_btns = {}
         self._pages = {}
@@ -593,7 +601,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.3 PRO", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.4", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
@@ -633,6 +641,7 @@ class App(ctk.CTk):
         self._build_processes(self._pages["proc"][0])
         self._build_cleaner(self._pages["clean"][0])
         self._build_quarantine(self._pages["quar"][0])
+        self._build_network(self._pages["net"][0])
 
         # status bar
         sb = ctk.CTkFrame(main, fg_color=C_SIDEBAR, height=30, corner_radius=0)
@@ -663,6 +672,10 @@ class App(ctk.CTk):
             self._refresh_quarantine()
         if key == "proc":
             self._refresh_proc()
+        if key == "net" and not getattr(self, "_net_loaded", False):
+            self._net_loaded = True
+            self._refresh_net_info()
+            self._refresh_ports()
 
     def _tick_status(self):
         def work():
@@ -725,6 +738,52 @@ class App(ctk.CTk):
                                        command=self._light)
         self.light_btn.pack(anchor="w", padx=16, pady=(0, 16))
 
+        # Health Score + Optimize in 1 Click (v2.4)
+        hrow = ctk.CTkFrame(page, fg_color="transparent")
+        hrow.pack(fill="x", pady=(10, 0))
+
+        h1 = ctk.CTkFrame(hrow, fg_color=C_CARD, corner_radius=12)
+        h1.pack(side="left", fill="both", expand=True, padx=(0, 8))
+        ctk.CTkLabel(h1, text="Health Score",
+                     font=(FONT, 14, "bold"), anchor="w").pack(anchor="w", padx=16, pady=(14, 2))
+        self.health_score_lbl = ctk.CTkLabel(h1, text="-- / 100",
+                                             font=(FONT, 22, "bold"), text_color=C_ACC,
+                                             anchor="w")
+        self.health_score_lbl.pack(anchor="w", padx=16)
+        self.health_break_lbl = ctk.CTkLabel(h1, text="Press Refresh to calculate.",
+                                             font=(FONT, 11), text_color=C_MUT, wraplength=380,
+                                             justify="left", anchor="w")
+        self.health_break_lbl.pack(anchor="w", padx=16, pady=(0, 6))
+        self.health_suggest_lbl = ctk.CTkLabel(h1, text="", font=(FONT, 11),
+                                               text_color=C_TXT, wraplength=380,
+                                               justify="left", anchor="w")
+        self.health_suggest_lbl.pack(anchor="w", padx=16, pady=(0, 10))
+        self.health_refresh_btn = ctk.CTkButton(h1, text="Refresh Health Score",
+                                                fg_color=C_CARD2, hover_color=C_ACC,
+                                                command=self._refresh_health)
+        self.health_refresh_btn.pack(anchor="w", padx=16, pady=(0, 16))
+
+        h2 = ctk.CTkFrame(hrow, fg_color=C_CARD, corner_radius=12)
+        h2.pack(side="left", fill="both", expand=True, padx=(8, 0))
+        ctk.CTkLabel(h2, text="Optimize in 1 Click",
+                     font=(FONT, 14, "bold"), anchor="w").pack(anchor="w", padx=16, pady=(14, 2))
+        ctk.CTkLabel(h2, text="Light RAM clean + level-1 junk to quarantine + "
+                              "Quick Refresh. Kills nothing, deletes nothing "
+                              "permanently.",
+                     font=(FONT, 12), text_color=C_MUT, wraplength=380,
+                     justify="left", anchor="w").pack(anchor="w", padx=16, pady=(0, 10))
+        self.optimize_btn = ctk.CTkButton(h2, text="Optimize Now", fg_color="#047857",
+                                          hover_color="#065f46",
+                                          command=self._optimize)
+        self.optimize_btn.pack(anchor="w", padx=16, pady=(0, 8))
+        self.opt_prog = ctk.CTkProgressBar(h2, width=280, height=12)
+        self.opt_prog.pack(anchor="w", padx=16, pady=(0, 6))
+        self.opt_prog.set(0)
+        self.opt_msg = ctk.CTkLabel(h2, text="", font=(FONT, 11),
+                                    text_color=C_MUT, wraplength=380,
+                                    justify="left", anchor="w")
+        self.opt_msg.pack(anchor="w", padx=16, pady=(0, 16))
+
         self.dash_msg = ctk.CTkLabel(page, text="", text_color=C_MUT,
                                      font=(FONT, 12), wraplength=900,
                                      justify="left", anchor="w")
@@ -785,6 +844,64 @@ class App(ctk.CTk):
             action_log.log("freeram_emergency", {"killed": killed})
         else:
             self.dash_msg.configure(text="Nothing was closed.")
+
+    # ------------------------- Health Score + Optimize (v2.4) -------------------------
+    def _refresh_health(self):
+        self.health_break_lbl.configure(text="Calculating...")
+        self.health_suggest_lbl.configure(text="")
+
+        def work():
+            # Junk size comes from a level-1 scan (no path list needed).
+            junk = 0
+            for res in [scanner.scan_rule(r) for r in engine.rules_for(1)]:
+                if not res.get("error"):
+                    junk += res.get("size", 0)
+            return health_mod.compute_health(junk_bytes=junk)
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.health_break_lbl.configure(text=f"Error: {res}")
+                return
+            ok, _msg, data = res
+            if not ok:
+                self.health_break_lbl.configure(text=_msg)
+                return
+            self.health_score_lbl.configure(text=f"{data['score']} / 100")
+            self.health_break_lbl.configure(text=health_mod.format_health(data))
+            self.health_suggest_lbl.configure(
+                text=" | ".join(data["suggestions"]))
+
+        self._run_bg([self.health_refresh_btn], work, done=done,
+                     status="Calculating Health Score...")
+
+    def _optimize(self):
+        self.opt_msg.configure(text="")
+        self.opt_prog.set(0)
+
+        def progress(done_n, total, label):
+            try:
+                self.after(0, lambda: self.opt_prog.set(
+                    done_n / total if total else 0))
+            except Exception:  # noqa: BLE001
+                pass
+
+        def work():
+            return optimizer.run_optimize(progress_cb=progress)
+
+        def done(res):
+            self.opt_prog.set(0)
+            if isinstance(res, Exception):
+                self.opt_msg.configure(text=f"Error: {res}")
+                return
+            ok, msg, report = res
+            self.opt_msg.configure(text=msg)
+            if ok:
+                ResultDialog(self, "Optimize finished",
+                             optimizer.format_report(report))
+                self._refresh_quarantine()
+
+        self._run_bg([self.optimize_btn], work, done=done,
+                     status="Optimizing...")
 
     # ------------------------- Processes page -------------------------
     def _build_processes(self, page):
@@ -1220,6 +1337,248 @@ class App(ctk.CTk):
 
         self._run_bg(self._q_buttons, work, done=done,
                      status="Cleaning expired items...")
+
+
+    # ------------------------- Network page (v2.4) -------------------------
+    def _build_network(self, page):
+        scroll = ctk.CTkScrollableFrame(page, fg_color="transparent")
+        scroll.pack(fill="both", expand=True)
+
+        # --- Network Info ---
+        ctk.CTkLabel(scroll, text="Network Info", font=(FONT, 14, "bold"),
+                     anchor="w").pack(anchor="w", pady=(0, 4))
+        row = ctk.CTkFrame(scroll, fg_color="transparent")
+        row.pack(fill="x", pady=(0, 4))
+        self.net_info_btn = ctk.CTkButton(row, text="Refresh Info", width=130,
+                                          fg_color=C_CARD2, hover_color=C_ACC,
+                                          command=self._refresh_net_info)
+        self.net_info_btn.pack(side="left")
+        self.net_info_msg = ctk.CTkLabel(row, text="", text_color=C_MUT,
+                                         font=(FONT, 11))
+        self.net_info_msg.pack(side="left", padx=10)
+        self.net_info_box = ctk.CTkTextbox(scroll, font=(MONO, 12), height=190)
+        self.net_info_box.pack(fill="x", pady=(0, 4))
+        self.net_info_box.insert("1.0", "Press Refresh Info to load.")
+        self.net_info_box.configure(state="disabled")
+        ctk.CTkLabel(scroll, text="Compare with: ipconfig /all in Command Prompt.",
+                     text_color=C_MUT, font=(FONT, 11), anchor="w"
+                     ).pack(anchor="w", pady=(0, 12))
+
+        # --- Port & SSH Inspector ---
+        ctk.CTkLabel(scroll, text="Port & SSH Inspector", font=(FONT, 14, "bold"),
+                     anchor="w").pack(anchor="w", pady=(0, 4))
+        self.net_ssh_lbl = ctk.CTkLabel(scroll, text="Port 22: unknown",
+                                        font=(FONT, 12, "bold"), anchor="w")
+        self.net_ssh_lbl.pack(anchor="w", pady=(0, 4))
+        self.net_port_tree = _dark_tree(scroll)
+        self.net_port_tree["columns"] = ("process", "scope", "level")
+        self.net_port_tree.heading("#0", text="Port / Bind IP")
+        self.net_port_tree.heading("process", text="Process")
+        self.net_port_tree.heading("scope", text="Scope")
+        self.net_port_tree.heading("level", text="Level")
+        self.net_port_tree.column("#0", width=220)
+        self.net_port_tree.column("process", width=220)
+        self.net_port_tree.column("scope", width=130)
+        self.net_port_tree.column("level", width=110)
+        self.net_port_tree.pack(fill="x", pady=(0, 4))
+        self.net_port_tree.tag_configure("critical", foreground=C_RED)
+        self.net_port_tree.tag_configure("warning", foreground=C_YLW)
+        prow = ctk.CTkFrame(scroll, fg_color="transparent")
+        prow.pack(fill="x", pady=(0, 4))
+        self.net_ports_btn = ctk.CTkButton(prow, text="Refresh Ports", width=130,
+                                           fg_color=C_CARD2, hover_color=C_ACC,
+                                           command=self._refresh_ports)
+        self.net_ports_btn.pack(side="left", padx=(0, 8))
+        self.net_guide_btn = ctk.CTkButton(prow, text="How to close", width=130,
+                                           fg_color=C_CARD2, hover_color=C_ACC,
+                                           command=self._port_guide)
+        self.net_guide_btn.pack(side="left")
+        self.net_ports_msg = ctk.CTkLabel(prow, text="", text_color=C_MUT,
+                                          font=(FONT, 11))
+        self.net_ports_msg.pack(side="left", padx=10)
+        ctk.CTkLabel(scroll, text="Red = sensitive port open to the whole LAN. "
+                                  "Select a row, then press How to close.",
+                     text_color=C_MUT, font=(FONT, 11), anchor="w"
+                     ).pack(anchor="w", pady=(0, 12))
+
+        # --- Speed Test ---
+        ctk.CTkLabel(scroll, text="Speed Test (before / after)", font=(FONT, 14, "bold"),
+                     anchor="w").pack(anchor="w", pady=(0, 4))
+        self.net_before_lbl = ctk.CTkLabel(scroll, text="Before: -",
+                                           font=(FONT, 12), anchor="w")
+        self.net_before_lbl.pack(anchor="w")
+        self.net_after_lbl = ctk.CTkLabel(scroll, text="After: -",
+                                          font=(FONT, 12), anchor="w")
+        self.net_after_lbl.pack(anchor="w", pady=(0, 4))
+        srow = ctk.CTkFrame(scroll, fg_color="transparent")
+        srow.pack(fill="x", pady=(0, 4))
+        self.net_speed_btn = ctk.CTkButton(srow, text="Run Speed Test", width=150,
+                                           fg_color=C_CARD2, hover_color=C_ACC,
+                                           command=self._run_speed_test)
+        self.net_speed_btn.pack(side="left", padx=(0, 8))
+        self.net_speed_reset_btn = ctk.CTkButton(srow, text="Reset", width=90,
+                                                 fg_color=C_CARD2, hover_color=C_ACC,
+                                                 command=self._reset_speed)
+        self.net_speed_reset_btn.pack(side="left")
+        self.net_speed_msg = ctk.CTkLabel(srow, text="", text_color=C_MUT,
+                                          font=(FONT, 11))
+        self.net_speed_msg.pack(side="left", padx=10)
+
+        # --- Quick Refresh ---
+        ctk.CTkLabel(scroll, text="Quick Refresh", font=(FONT, 14, "bold"),
+                     anchor="w").pack(anchor="w", pady=(12, 4))
+        ctk.CTkLabel(scroll, text="Flush DNS + release + renew IP. Your connection "
+                                  "drops briefly while renewing.",
+                     text_color=C_MUT, font=(FONT, 11), anchor="w",
+                     wraplength=900, justify="left").pack(anchor="w", pady=(0, 4))
+        qrow = ctk.CTkFrame(scroll, fg_color="transparent")
+        qrow.pack(fill="x", pady=(0, 4))
+        self.net_refresh_btn = ctk.CTkButton(qrow, text="Quick Refresh", width=150,
+                                             fg_color="#047857", hover_color="#065f46",
+                                             command=self._quick_refresh_net)
+        self.net_refresh_btn.pack(side="left", padx=(0, 8))
+        self.net_refresh_prog = ctk.CTkProgressBar(qrow, width=280, height=12)
+        self.net_refresh_prog.pack(side="left", padx=6)
+        self.net_refresh_prog.set(0)
+        self.net_refresh_msg = ctk.CTkLabel(scroll, text="", text_color=C_MUT,
+                                            font=(FONT, 11), wraplength=900,
+                                            justify="left", anchor="w")
+        self.net_refresh_msg.pack(anchor="w", pady=(0, 8))
+
+    def _refresh_net_info(self):
+        self.net_info_msg.configure(text="Loading...")
+
+        def work():
+            return net_info.get_network_info()
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.net_info_msg.configure(text=f"Error: {res}")
+                return
+            ok, msg, data = res
+            self.net_info_box.configure(state="normal")
+            self.net_info_box.delete("1.0", "end")
+            self.net_info_box.insert("1.0", net_info.format_info(data))
+            self.net_info_box.configure(state="disabled")
+            self.net_info_msg.configure(text=msg)
+
+        self._run_bg([self.net_info_btn], work, done=done,
+                     status="Loading network info...")
+
+    def _refresh_ports(self):
+        self.net_ports_msg.configure(text="Loading...")
+
+        def work():
+            ok, msg, rows = net_ports.list_listening_ports()
+            sok, smsg, ssh = net_ports.check_ssh()
+            return ok, msg, rows, sok, smsg, ssh
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.net_ports_msg.configure(text=f"Error: {res}")
+                return
+            ok, msg, rows, _sok, smsg, ssh = res
+            for i in self.net_port_tree.get_children():
+                self.net_port_tree.delete(i)
+            for r in rows:
+                self.net_port_tree.insert(
+                    "", "end", text=f"{r['port']}  ({r['bind_ip'] or '-'})",
+                    values=(r["process"], r["scope"], r["level"]),
+                    tags=(r["level"],))
+            is_open = ssh.get("open", False)
+            self.net_ssh_lbl.configure(
+                text=smsg, text_color=C_RED if is_open else C_GRN)
+            self.net_ports_msg.configure(text=msg if ok else msg)
+
+        self._run_bg([self.net_ports_btn], work, done=done,
+                     status="Listing ports...")
+
+    def _port_guide(self):
+        sel = self.net_port_tree.selection()
+        if not sel:
+            ResultDialog(self, "How to close a port",
+                         net_ports.get_port_guide(None))
+            return
+        txt = self.net_port_tree.item(sel[0], "text") or ""
+        try:
+            port = int(txt.split()[0])
+        except (ValueError, IndexError):
+            port = None
+        ResultDialog(self, "How to close", net_ports.get_port_guide(port))
+
+    def _run_speed_test(self):
+        self.net_speed_msg.configure(text="Testing...")
+
+        def work():
+            return net_speed.run_speed_test()
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.net_speed_msg.configure(text=f"Error: {res}")
+                return
+            ok, msg, results = res
+            summary = net_speed.format_speed(results)
+            if self._net_before is None:
+                self._net_before = results
+                self.net_before_lbl.configure(text="Before: " + summary)
+                self.net_speed_msg.configure(text="Saved as Before. Run again after "
+                                                  "Quick Refresh to compare.")
+            else:
+                self._net_after = results
+                self.net_after_lbl.configure(text="After: " + summary)
+                pb = (self._net_before or {}).get("ping_1_1_1_1_ms")
+                pa = results.get("ping_1_1_1_1_ms")
+                if pb is not None and pa is not None:
+                    delta = pa - pb
+                    self.net_speed_msg.configure(
+                        text=f"Ping change: {delta:+.0f} ms (negative = better).")
+                else:
+                    self.net_speed_msg.configure(text=msg)
+            if not ok:
+                self.net_speed_msg.configure(text=msg)
+
+        self._run_bg([self.net_speed_btn], work, done=done,
+                     status="Running speed test...")
+
+    def _reset_speed(self):
+        self._net_before = None
+        self._net_after = None
+        self.net_before_lbl.configure(text="Before: -")
+        self.net_after_lbl.configure(text="After: -")
+        self.net_speed_msg.configure(text="Cleared.")
+
+    def _quick_refresh_net(self):
+        self.net_refresh_msg.configure(text="")
+        self.net_refresh_prog.set(0)
+
+        def progress(i, total, label):
+            try:
+                self.after(0, lambda: self.net_refresh_prog.set(
+                    i / total if total else 0))
+                self.after(0, lambda: self.net_refresh_msg.configure(
+                    text=f"Step: {label}..."))
+            except Exception:  # noqa: BLE001
+                pass
+
+        def work():
+            return net_refresh.quick_refresh(progress_cb=progress)
+
+        def done(res):
+            self.net_refresh_prog.set(0)
+            if isinstance(res, Exception):
+                self.net_refresh_msg.configure(text=f"Error: {res}")
+                return
+            ok, msg, steps = res
+            lines = [msg]
+            for s in steps:
+                lines.append(f"- {s['step']}: "
+                             + ("OK" if s["ok"] else f"FAILED — {s['message']}"))
+            self.net_refresh_msg.configure(
+                text="\n".join(lines),
+                text_color=C_GRN if ok else C_RED)
+
+        self._run_bg([self.net_refresh_btn], work, done=done,
+                     status="Refreshing network...")
 
 
 def main():

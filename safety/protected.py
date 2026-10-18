@@ -35,6 +35,41 @@ _PROTECTED_PREFIX_LINUX = [
 ]
 
 
+# --- Sensitive network ports (CleanBoost v2.4, Port Inspector) ---
+# Ports that are risky when bound to 0.0.0.0 (open to the whole LAN).
+# Used by network/ports.py via port_severity(). Never blocks anything
+# by itself — it only labels rows in the UI.
+SENSITIVE_PORTS = {
+    21: "FTP",
+    23: "Telnet",
+    445: "SMB",
+    3306: "MySQL",
+    3389: "Remote Desktop",
+    5432: "PostgreSQL",
+    5900: "VNC",
+}
+
+
+def port_severity(port: int, bind_ip: str) -> str:
+    """Severity of a LISTEN port: 'critical' | 'warning' | 'normal'.
+
+    critical: sensitive port open to the whole network (0.0.0.0 / ::).
+    warning:  sensitive port, but bound to localhost only.
+    normal:   everything else.
+    """
+    try:
+        p = int(port)
+    except (TypeError, ValueError):
+        return "normal"
+    if p not in SENSITIVE_PORTS:
+        return "normal"
+    if (bind_ip or "") in ("0.0.0.0", "::", ""):
+        return "critical"
+    if (bind_ip or "") in ("127.0.0.1", "::1"):
+        return "warning"
+    return "critical"
+
+
 def _norm(p: str) -> str:
     return os.path.normcase(os.path.normpath(p))
 

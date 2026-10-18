@@ -38,6 +38,46 @@
 <main>
 
 <div class="version">
+  <h2>v2.4 — "Fresh Network"</h2>
+  <div class="date">2026-10-19 — Network tab, Health Score, Optimize in 1 Click</div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>New "Network" tab: Network Info Dashboard.</b>
+    <p class="why">Shows Local IP, Subnet, MAC, Global IP, Gateway, DNS and WiFi (SSID, signal %, link rate) without typing <code>ipconfig</code>. Read-only, no admin needed. Global IP uses api.ipify.org with an ifconfig.me fallback (5s timeout). Gateway/DNS parse <code>ipconfig</code> with <code>route print</code> / <code>netsh</code> fallbacks because ipconfig output depends on Windows display language.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>New "Network" tab: Port &amp; SSH Inspector.</b>
+    <p class="why">Lists every LISTEN port with the process holding it and its scope (LAN / Local only). Port 22 gets its own status line (OPEN with process name, or closed — safe). Sensitive ports (21 FTP, 23 Telnet, 445 SMB, 3306 MySQL, 3389 Remote Desktop, 5432 PostgreSQL, 5900 VNC) bound to 0.0.0.0 get a red flag; the "How to close" button explains how to close each one. <code>safety/protected.py</code> now holds <code>SENSITIVE_PORTS</code> + <code>port_severity()</code>.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>New "Network" tab: Speed Test before/after + Quick Refresh.</b>
+    <p class="why">First test is saved as Before; run again after Quick Refresh to compare (ping delta shown). Quick Refresh runs <code>ipconfig /flushdns → /release → /renew</code> in a background thread with per-step progress, logs every step to <code>action_log</code>, then pings the gateway to verify the connection is back. No third-party libraries: ping via subprocess, DNS time via nslookup (socket fallback), download speed via a 10 MB Cloudflare test file.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>Health Score 0–100 on the Overview tab (<code>core/health.py</code>).</b>
+    <p class="why">One number from a transparent formula: RAM free × 0.3, disk free × 0.3, junk / 5 GB (max 20), startup apps / 20 (max 10), days since last clean / 30 (max 10). The breakdown and a concrete suggestion are shown under the score. Startup count is a read-only registry count; days-since-clean comes from the <code>clean</code> entries in <code>action_log</code>. The score never scans the disk itself — the UI passes the level-1 scan total.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>"Optimize in 1 Click" button (<code>core/optimize.py</code>).</b>
+    <p class="why">Runs the safe chain only: Light RAM clean (kills nothing) → level-1 junk of <code>default_on</code> groups to <b>quarantine</b> (never permanent delete — permanent deletes still need per-group confirmation in Disk Cleaner) → Quick Refresh. Reports RAM %, quarantined GB, and ping before/after, with an overall progress bar. All steps run in a background thread under the busy-guard.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag ux">UX</span><b>All new UI strings are English; version label bumped to v2.4.</b>
+    <p class="why">Vietnamese text had font rendering problems in the UI (v2.3 rule), so the Network tab, Health Score and Optimize UI are English-only.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Note</span><b>Windows-only behaviour verified on real Windows only.</b>
+    <p class="why">The dev machine is Linux, so <code>ipconfig</code> / <code>netsh</code> / <code>ping -n</code> paths could only be checked with mocked unit tests here. Real verification checklist for the user: numbers match <code>ipconfig /all</code>, Quick Refresh reconnects, Port Inspector reports port 22 correctly when OpenSSH Server is toggled.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.3 PRO</h2>
   <div class="date">2026-10-10 — Stability, security &amp; English UI</div>
 
