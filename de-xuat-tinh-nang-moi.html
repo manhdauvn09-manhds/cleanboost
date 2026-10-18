@@ -153,6 +153,48 @@ Thời gian phân giải DNS               → ms</div>
   <p>Service nền nhẹ: mỗi 5 phút ping 1 lần (tốn ~0 tài nguyên). Nếu ping tăng đột biến &gt; 3 lần liên tiếp → hiện thông báo Windows: <i>"Mạng có vẻ chậm (ping 450ms). Bấm để Quick Refresh."</i> Người dùng bấm mới chạy — không tự động can thiệp mạng khi chưa được phép.</p>
 </div>
 
+<div class="card">
+  <h3>8. Network Info Dashboard — bảng thông số mạng đầy đủ</h3>
+  <div class="badges"><span class="b p0">Ưu tiên P0</span><span class="b safe">Chỉ đọc, không can thiệp</span></div>
+  <p>Tab "Mạng" mở lên là thấy ngay toàn bộ "lý lịch" kết nối của máy — không cần gõ lệnh <span style="font-family:Consolas">ipconfig</span> nữa:</p>
+  <div class="kpi">
+    <div><b id="x">Local IP</b><span>IP trong mạng LAN (vd 192.168.1.25)</span></div>
+    <div><b>Global IP</b><span>IP public ra internet</span></div>
+    <div><b>Gateway</b><span>IP router</span></div>
+    <div><b>DNS</b><span>DNS đang dùng</span></div>
+  </div>
+  <div class="tech"># Lấy bằng psutil + 1 request HTTP nhẹ (có timeout, lỗi thì bỏ qua)
+psutil.net_if_addrs()            → Local IP, Subnet mask, MAC từng card
+urllib → https://api.ipify.org   → Global IP (timeout 5s)
+netsh wlan show interfaces       → Tên WiFi (SSID), sóng %, tốc độ link, kênh</div>
+  <p>Thêm: tốc độ card mạng (1 Gbps / WiFi 866 Mbps...), địa chỉ MAC, IPv6 (nếu có).</p>
+</div>
+
+<div class="card">
+  <h3>9. Port &amp; SSH Inspector — cổng nào đang mở? SSH có mở không?</h3>
+  <div class="badges"><span class="b p0">Ưu tiên P0</span><span class="b safe">Chỉ đọc</span></div>
+  <p>Liệt kê <b>mọi cổng đang lắng nghe (LISTEN)</b> trên máy kèm app nào đang giữ cổng đó:</p>
+  <div class="tech"># psutil có sẵn, không cần tool ngoài
+psutil.net_connections(kind='inet')  → lọc status == 'LISTEN'
+→ 0.0.0.0:22  ← sshd.exe (mở ra cả mạng LAN!)
+→ 127.0.0.1:5432 ← postgres.exe (chỉ máy mình)</div>
+  <p><b>Kiểm tra SSH riêng</b> (vì Mạnh hay dùng SSH): báo rõ <i>"Port 22: ĐANG MỞ (sshd.exe) — máy khác trong LAN có thể SSH vào"</i> hoặc <i>"Port 22: đóng — an toàn"</i>.</p>
+  <p><b>Cảnh báo cổng nguy hiểm:</b> nếu thấy cổng nhạy cảm mở ra toàn mạng (0.0.0.0) thì gắn cờ đỏ, ví dụ: 23 (Telnet), 3389 (Remote Desktop), 445 (SMB), 5900 (VNC) — kèm nút <i>"Hướng dẫn đóng"</i>. Đây là tính năng <b>bảo mật thật</b>, không app dọn rác nào ở VN có.</p>
+</div>
+
+<div class="card">
+  <h3>10. Network Diagnostics — chẩn đoán 1 chạm khi "mạng lag"</h3>
+  <div class="badges"><span class="b p1">Ưu tiên P1</span><span class="b safe">Chỉ đọc</span></div>
+  <p>Khi bấm "Chẩn đoán", app chạy và trình bày kết quả dạng bảng dễ hiểu:</p>
+  <div class="tech">✓ Ping tới Gateway (router)      → biết lỗi ở WiFi hay ở nhà mạng
+✓ Ping tới 1.1.1.1 / 8.8.8.8       → biết internet quốc tế có ổn không
+✓ Thời gian phân giải DNS          → biết có nên đổi DNS không
+✓ Số kết nối ESTABLISHED + top IP  → biết có app nào "gọi về nhà" lạ không
+→ Kết luận tự động: "WiFi yếu (sóng 35%) — hãy lại gần router"
+   hoặc: "Mạng nội bộ ổn, ping quốc tế cao — do nhà mạng, hãy Quick Refresh thử"</div>
+  <p><b>10x ở đây:</b> thay vì user phải đoán "lag do đâu", app <b>kết luận hộ bằng logic loại trừ</b> — đúng kiểu "bác sĩ mạng".</p>
+</div>
+
 <!-- ==================== PHẦN B ==================== -->
 <h2 class="sec" id="up">⚡ Phần B — Nâng cấp 10x các tính năng hiện có</h2>
 <p class="sec-sub">Không thêm tab mới ồ ạt — mà làm những gì đã có trở nên <b>thông minh, tự động và đo được</b>.</p>

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kế hoạch triển khai — CleanBoost v3.0</title>
+<style>
+  :root{--bg:#0f1420;--card:#182032;--card2:#1f2a44;--line:#2b3a58;
+    --txt:#e8edf7;--mut:#93a1bd;--acc:#4f8cff;--grn:#34d399;--ylw:#fbbf24;--red:#f87171}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:"Segoe UI",Roboto,Arial,sans-serif;line-height:1.65}
+  header{background:linear-gradient(135deg,#14261c,#0f1420);
+    border-bottom:1px solid var(--line);padding:36px 24px;text-align:center}
+  header h1{margin:0 0 8px;font-size:28px}
+  header p{margin:4px 0;color:var(--mut)}
+  .wrap{max-width:1020px;margin:0 auto;padding:24px}
+  h2{font-size:22px;color:var(--grn);margin:36px 0 8px}
+  h3{font-size:17px;color:var(--acc);margin:18px 0 6px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:14px 0}
+  .card p{margin:6px 0}
+  pre{background:#0b0f18;border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px;font-family:Consolas,monospace;font-size:13px;
+    color:#c9d6f2;overflow-x:auto;line-height:1.5}
+  code{font-family:Consolas,monospace;background:var(--card2);padding:2px 7px;border-radius:6px;font-size:13px}
+  .b{display:inline-block;font-size:12px;font-weight:700;border-radius:20px;padding:3px 12px;margin:2px 4px 2px 0}
+  .p0{background:#7f1d1d;color:#fff}.p1{background:#92400e;color:#fff}.p2{background:#1e3a5f;color:#bcd6ff}
+  .done{background:#064e3b;color:#a7f3d0}.todo{background:#3b2f1e;color:#fde68a}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+  th{background:var(--card2);color:var(--acc)}
+  .note{border-left:4px solid var(--ylw);background:#221a08;padding:12px 16px;
+    border-radius:0 10px 10px 0;margin:18px 0;color:#fde68a}
+  .note b{color:#fff}
+  .check{color:var(--grn)} .cross{color:var(--red)}
+  footer{text-align:center;color:var(--mut);padding:30px;font-size:13px}
+  ul.tight li{margin:3px 0}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🗺️ Kế hoạch triển khai — CleanBoost v3.0</h1>
+  <p>Ngày lập: 19/10/2026 • Dựa trên file đề xuất <code>de-xuat-tinh-nang-moi.html</code></p>
+  <p>Tài liệu này mô tả <b>kiến trúc module, cách làm từng tính năng, thứ tự triển khai và cách test</b>.</p>
+</header>
+
+<div class="wrap">
+
+<h2>1. Kiến trúc module mới</h2>
+<p>Giữ nguyên triết lý hiện tại: <code>core/</code> = thao tác hệ thống, <code>cleaner/</code> = dọn dẹp, <code>safety/</code> = bảo vệ, <code>ui/</code> = giao diện. Thêm package <code>network/</code> cho mọi thứ liên quan mạng:</p>
+<pre>cleanboost/
+├── network/                  ← PACKAGE MỚI (tab "Mạng")
+│   ├── __init__.py
+│   ├── info.py               → A.8  Network Info Dashboard (IP local/global, gateway, DNS, MAC, WiFi)
+│   ├── ports.py              → A.9  Port &amp; SSH Inspector (cổng LISTEN, cảnh báo cổng nguy hiểm)
+│   ├── diag.py               → A.10 Network Diagnostics (ping, kết luận tự động)
+│   ├── refresh.py            → A.1  Quick Refresh (flushdns/release/renew)
+│   │                         → A.2  Adapter Reset (Disable/Enable-NetAdapter)
+│   │                         → A.4  Deep Reset (winsock/int ip reset)
+│   ├── dns.py                → A.3  DNS Switcher + đo tốc độ DNS
+│   ├── speed.py              → A.5  Speed Test trước/sau
+│   ├── hogs.py               → A.6  Bandwidth Hog Finder
+│   └── guard.py              → A.7  Auto Internet Guard (thread nền)
+├── core/
+│   ├── health.py             → B.2  Health Score 0–100           (MỚI)
+│   ├── startup.py            → B.3  Startup Manager              (MỚI)
+│   ├── profiles.py           → B.5  Profile Game/Làm việc        (MỚI)
+│   └── history_db.py         → B.7  Lưu mẫu RAM/CPU/mạng 30s/lần (SQLite) (MỚI)
+├── cleaner/
+│   └── duplicates.py         → B.4  Duplicate Finder (hash SHA-256) (MỚI)
+├── ui/app.py                 → thêm tab "Mạng", nút ⚡ Optimize, Health Score, tray icon
+└── safety/protected.py       → thêm DANH SÁCH CỔNG NHẠY CẢM (23, 3389, 445, 5900...)</pre>
+
+<div class="note"><b>Quy ước an toàn (bắt buộc mọi module mới tuân theo):</b> hàm nào cũng trả về <code>(ok, message)</code>, không bao giờ raise ra ngoài;
+thao tác cần admin → kiểm tra <code>privilege.is_admin()</code> trước và báo rõ; thao tác nguy hiểm → cảnh báo + checkbox xác nhận riêng;
+mọi hành động ghi vào <code>action_log</code> như các tính năng cũ.</div>
+
+<h2>2. Cách làm chi tiết từng tính năng</h2>
+
+<h3>A.8 — Network Info Dashboard <span class="b p0">P0</span></h3>
+<div class="card">
+<p><b>Cách làm:</b> toàn bộ chỉ đọc, không cần admin, chạy 1 lần khi mở tab (có nút Refresh).</p>
+<table>
+<tr><th>Thông số</th><th>Cách lấy (Windows)</th><th>Fallback</th></tr>
+<tr><td>Local IP / Subnet / MAC</td><td><code>psutil.net_if_addrs()</code> — lọc card đang UP</td><td><code>socket.gethostbyname()</code></td></tr>
+<tr><td>Global IP</td><td>HTTP GET <code>https://api.ipify.org</code> (timeout 5s)</td><td><code>https://ifconfig.me</code>, lỗi → "không lấy được"</td></tr>
+<tr><td>Gateway</td><td>parse <code>ipconfig</code> hoặc <code>route print</code></td><td>—</td></tr>
+<tr><td>DNS đang dùng</td><td><code>netsh interface ip show dns</code> / parse ipconfig</td><td>—</td></tr>
+<tr><td>WiFi: SSID, sóng %, tốc độ</td><td><code>netsh wlan show interfaces</code> → parse Signal/Receive rate</td><td>ẩn mục nếu dùng LAN</td></tr>
+</table>
+<p><b>Test:</b> chạy trên máy thật, đối chiếu với <code>ipconfig /all</code> — mọi số phải khớp.</p>
+</div>
+
+<h3>A.9 — Port &amp; SSH Inspector <span class="b p0">P0</span></h3>
+<div class="card">
+<p><b>Cách làm:</b></p>
+<pre># 1. Liệt kê cổng đang nghe
+conns = psutil.net_connections(kind='inet')
+listen = [c for c in conns if c.status == 'LISTEN']
+# → với mỗi cổng: laddr.port, laddr.ip (0.0.0.0 = mở ra cả LAN!), pid → tên process
+
+# 2. Kiểm tra SSH riêng
+ssh_open = any(c.laddr.port == 22 for c in listen)
+
+# 3. Cảnh báo: cổng trong DANH SÁCH NHẠY CẢM mà bind 0.0.0.0 → cờ đỏ
+SENSITIVE_PORTS = {23:'Telnet', 3389:'Remote Desktop', 445:'SMB',
+                   5900:'VNC', 21:'FTP', 3306:'MySQL', 5432:'PostgreSQL'}</pre>
+<p><b>UI:</b> bảng 4 cột — Cổng | Process | Phạm vi (LAN/Chỉ máy này) | Mức độ (xanh/vàng/đỏ). Nút "Hướng dẫn đóng" mở popup giải thích từng cổng.</p>
+<p><b>Test:</b> bật/tắt OpenSSH Server trên Windows để kiểm tra báo đúng port 22 mở/đóng.</p>
+</div>
+
+<h3>A.1 + A.2 + A.4 — Quick Refresh / Adapter Reset / Deep Reset <span class="b p0">P0</span> <span class="b p1">P1</span></h3>
+<div class="card">
+<p><b>Cách làm:</b> mỗi thao tác là 1 hàm trong <code>network/refresh.py</code>, chạy tuần tự trong thread nền, UI hiện progress từng bước (tái dùng busy-guard đã có từ v2.3).</p>
+<pre>def quick_refresh():            # không cần admin
+    run("ipconfig", "/flushdns")     # bước 1/3
+    run("ipconfig", "/release")      # bước 2/3
+    run("ipconfig", "/renew")        # bước 3/3
+
+def adapter_reset(name="Wi-Fi"):     # CẦN ADMIN + đếm ngược 3s + nút Hủy
+    powershell Disable-NetAdapter → sleep 3 → Enable-NetAdapter
+
+def deep_reset():                    # CẦN ADMIN + cảnh báo đỏ "cần restart máy"
+    run("netsh", "winsock", "reset")
+    run("netsh", "int", "ip", "reset")</pre>
+<p><b>Test:</b> đo ping trước/sau trên máy thật; Adapter Reset phải tự kết nối lại WiFi trong 30s.</p>
+</div>
+
+<h3>A.3 — DNS Switcher <span class="b p1">P1</span></h3>
+<div class="card">
+<p><b>Cách làm:</b> <b>luôn lưu DNS cũ vào file config trước khi đổi</b> → nút "Hoàn tác" khôi phục chính xác. Đo tốc độ DNS bằng cách resolve <code>google.com</code> 5 lần qua từng DNS (dùng <code>nslookup</code> với server chỉ định) rồi gợi ý cái nhanh nhất.</p>
+<pre># Đổi (cần admin):
+netsh interface ip set dns "Wi-Fi" static 1.1.1.1
+netsh interface ip add dns "Wi-Fi" 1.0.0.1 index=2
+# Hoàn tác: đọc DNS đã lưu → set lại như cũ</pre>
+</div>
+
+<h3>A.5 — Speed Test <span class="b p0">P0</span> &amp; A.10 — Diagnostics <span class="b p1">P1</span></h3>
+<div class="card">
+<p><b>Cách làm (không thêm thư viện ngoài):</b> ping bằng <code>subprocess ping -n 4</code> parse thời gian trung bình; tốc độ tải bằng download file test 10MB từ CDN (đo bytes/giây); DNS resolve time bằng <code>nslookup</code>. Diagnostics chạy 4 bài kiểm tra rồi áp <b>luật loại trừ</b> để kết luận:</p>
+<pre>ping gateway cao   → "WiFi/LAN có vấn đề — lại gần router / kiểm tra dây"
+ping gateway ổn + ping 1.1.1.1 cao → "Do nhà mạng/tuyến quốc tế — thử Quick Refresh"
+dns resolve chậm   → "Nên đổi DNS (sang mục DNS Switcher)"
+tất cả ổn          → "Mạng bình thường — lag có thể do app/server game"</pre>
+</div>
+
+<h3>A.6 — Bandwidth Hog Finder <span class="b p1">P1</span> &amp; A.7 — Auto Guard <span class="b p2">P2</span></h3>
+<div class="card">
+<p><b>Hog Finder:</b> chụp <code>psutil.net_io_counters(pernic=True)</code> 2 lần cách nhau 3s → chênh lệch = tốc độ hiện tại; map connection → process qua <code>psutil.net_connections()</code>. Tái dùng bảng process + nút End task của tab Processes.</p>
+<p><b>Auto Guard:</b> thread daemon ping 1.1.1.1 mỗi 5 phút; 3 lần liên tiếp &gt; 300ms → toast <i>"Mạng có vẻ chậm — bấm để Quick Refresh"</i>. <b>Không tự chạy refresh khi chưa được bấm.</b> Có toggle bật/tắt trong Settings.</p>
+</div>
+
+<h3>B.1 — Nút ⚡ Tối ưu 1 chạm <span class="b p0">P0</span> &amp; B.2 — Health Score <span class="b p0">P0</span></h3>
+<div class="card">
+<p><b>Optimize:</b> 1 hàm <code>run_optimize()</code> gọi tuần tự: <code>memory_cleaner.light_clean()</code> → quét+dọn mức 1 (nhóm default_on) → <code>network.refresh.quick_refresh()</code> → trả về báo cáo dict. Progress bar tổng 0–100%.</p>
+<p><b>Health Score</b> (<code>core/health.py</code>) — công thức minh bạch, hiện ngay dưới điểm số:</p>
+<pre>score = 100
+  - (100 - %RAM trống) × 0.3        # RAM
+  - (100 - %đĩa trống) × 0.3        # đĩa
+  - min(rác quét được / 5GB, 1) × 20 # rác
+  - min(số app startup / 20, 1) × 10 # startup
+  - (ngày từ lần dọn cuối / 30) × 10 # độ "cũ"</pre>
+</div>
+
+<h3>B.3 → B.8 (v2.5 / v3.0)</h3>
+<div class="card">
+<ul class="tight">
+<li><b>Startup Manager</b> (<code>core/startup.py</code>): đọc <code>HKCU\...\Run</code> + <code>HKLM\...\Run</code> (+ thư mục Startup); tắt = <b>đổi tên value thêm tiền tố <code>CleanBoost_disabled_</code></b> → bật lại 1 click, không mất dữ liệu.</li>
+<li><b>Duplicate Finder</b> (<code>cleaner/duplicates.py</code>): đi 2 vòng — vòng 1 nhóm theo size (rẻ), vòng 2 hash SHA-256 chỉ nhóm trùng size; UI nhóm theo hash, <b>luôn giữ 1 bản</b>, xóa các bản còn lại vào quarantine.</li>
+<li><b>Profiles</b> (<code>core/profiles.py</code>): lưu JSON <code>{kill:[pid/name], after:"restore"}</code>; nút "Khôi phục" mở lại app bằng đường dẫn exe đã lưu.</li>
+<li><b>Dọn có điều kiện:</b> mở rộng <code>cleaner/scheduler.py</code> thêm checker chạy mỗi 10 phút (RAM&gt;92% 5 phút → light clean; đĩa &lt;10% → dọn mức 1).</li>
+<li><b>Lịch sử:</b> <code>core/history_db.py</code> SQLite, 1 dòng/30s (timestamp, ram%, cpu%, ping) — giữ 7 ngày, tự xóa cũ.</li>
+<li><b>Tray + toast:</b> <code>pystray</code> + <code>win10toast</code> (thêm vào requirements, chỉ cài trên Windows).</li>
+</ul>
+</div>
+
+<h2>3. Thứ tự triển khai (không làm ồ ạt)</h2>
+<table>
+<tr><th>Phase</th><th>Việc</th><th>File chính</th><th>Xong khi</th></tr>
+<tr><td><b>v2.4</b> (2–3 ngày)</td><td>Network Info Dashboard + Port/SSH Inspector + Speed Test + Quick Refresh + nút Optimize + Health Score + tab "Mạng"</td><td><code>network/info.py, ports.py, speed.py, refresh.py, core/health.py, ui/app.py</code></td><td>Mạnh test trên máy thật: số liệu khớp <code>ipconfig</code>, Quick Refresh xong vào mạng lại được</td></tr>
+<tr><td><b>v2.5</b> (1 tuần)</td><td>DNS Switcher (+hoàn tác) + Diagnostics + Hog Finder + Startup Manager + Adapter/Deep Reset</td><td><code>network/dns.py, diag.py, hogs.py, core/startup.py</code></td><td>Đổi DNS rồi hoàn tác về đúng DNS cũ; tắt startup app rồi bật lại được</td></tr>
+<tr><td><b>v3.0</b> (2 tuần)</td><td>Auto Guard + dọn có điều kiện + Duplicate Finder + Profiles + lịch sử SQLite + tray/toast</td><td><code>network/guard.py, cleaner/duplicates.py, core/profiles.py, history_db.py</code></td><td>Chạy 24h không leak RAM, không false-positive</td></tr>
+</table>
+
+<h2>4. Rủi ro &amp; cách giảm thiểu</h2>
+<table>
+<tr><th>Rủi ro</th><th>Mức</th><th>Giảm thiểu</th></tr>
+<tr><td>Adapter Reset làm mất WiFi luôn (driver lỗi)</td><td>Cao</td><td>Đếm ngược 3s + nút Hủy; chỉ reset đúng adapter đang dùng; log chi tiết để chẩn đoán</td></tr>
+<tr><td>Đổi DNS xong quên DNS cũ</td><td>Trung bình</td><td><b>Bắt buộc</b> lưu DNS cũ trước khi đổi; nút Hoàn tác luôn hiện</td></tr>
+<tr><td>Public IP lookup treo khi mất mạng</td><td>Thấp</td><td>Timeout 5s + chạy trong thread nền, lỗi thì hiện "—"</td></tr>
+<tr><td>Tắt nhầm startup app quan trọng (driver, AV)</td><td>Trung bình</td><td>Danh sách <b>bảo vệ</b> (Windows Security, driver âm thanh/mạng) không cho tắt; tắt = đổi tên key, hoàn tác 1 click</td></tr>
+<tr><td>Duplicate Finder xóa nhầm file hệ thống</td><td>Cao</td><td>Chỉ quét thư mục user chọn; mặc định loại trừ <code>C:\Windows</code>; xóa vào quarantine trước</td></tr>
+</table>
+
+<div class="note"><b>Cam kết:</b> mọi phase đều <b>commit/push GitHub</b> sau khi test xong (workflow như cũ), cập nhật <code>history.html</code> cho mỗi thay đổi, và Mạnh <b>test trên máy Windows thật</b> trước khi coi là xong — vì các tính năng mạng chỉ kiểm chứng được trên Windows thật.</div>
+
+</div>
+
+<footer>
+  Kế hoạch bởi Muse • 19/10/2026 • Dành cho dự án CleanBoost của Mạnh<br>
+  Chờ Mạnh duyệt phase nào → làm phase đó.
+</footer>
+
+</body>
+</html>
