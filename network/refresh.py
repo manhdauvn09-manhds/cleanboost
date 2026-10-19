@@ -102,6 +102,82 @@ def quick_refresh(progress_cb=None):
     return True, "Quick Refresh done — DNS flushed, new IP obtained.", steps
 
 
+def flush_network(progress_cb=None):
+    """Flush stale network caches WITHOUT disconnecting (v2.6.0).
+
+    Quick Refresh reconnects (release + renew). Flush Network instead
+    cleans the caches that make sites fail or load slowly, and keeps
+    your current IP:
+      1. flushdns — empty the DNS resolver cache (no Admin needed)
+      2. nbtstat -R — purge the NetBIOS name cache (Admin)
+      3. arp -d * — clear the ARP cache, i.e. forget stale
+         IP -> MAC mappings (Admin)
+      4. netsh interface ip delete arpcache — clear the interface
+         ARP cache (Admin)
+      5. verify — ping the gateway to confirm the network still works
+
+    Admin-only steps are SKIPPED with a clear note when the app does
+    not run as Administrator — the rest still runs. ok is True when
+    every runnable step succeeded.
+    Returns (ok, message, steps) with steps =
+    [{step, ok, message, skipped}].
+    """
+    if sys.platform != "win32":
+        steps = [{"step": "flushdns", "ok": False,
+                  "message": "Flush Network requires Windows.",
+                  "skipped": False}]
+        return False, "Flush Network requires Windows.", steps
+    admin = _is_admin()
+    plan = [
+        ("flushdns", ["ipconfig", "/flushdns"], False),
+        ("netbios", ["nbtstat", "-R"], True),
+        ("arp", ["arp", "-d", "*"], True),
+        ("arpcache", ["netsh", "interface", "ip", "delete", "arpcache"], True),
+    ]
+    steps = []
+    all_ok = True
+    skipped_any = False
+    for i, (name, argv, needs_admin) in enumerate(plan):
+        if progress_cb:
+            progress_cb(i, len(plan) + 1, name)
+        if needs_admin and not admin:
+            steps.append({"step": name, "ok": True, "skipped": True,
+                          "message": "Skipped — run as Administrator."})
+            skipped_any = True
+            continue
+        try:
+            ok, msg, _out = _run(argv, timeout=30)
+        except Exception as e:  # noqa: BLE001
+            ok, msg = False, f"Unexpected error: {e}"
+        steps.append({"step": name, "ok": ok, "message": msg,
+                      "skipped": False})
+        action_log.log("network_flush_step",
+                       {"step": name, "ok": ok, "message": msg})
+        if not ok:
+            all_ok = False
+    try:
+        if progress_cb:
+            progress_cb(len(plan), len(plan) + 1, "verify")
+        vok, vmsg = _verify()
+    except Exception as e:  # noqa: BLE001
+        vok, vmsg = False, f"Verify error: {e}"
+    steps.append({"step": "verify", "ok": vok, "message": vmsg,
+                  "skipped": False})
+    action_log.log("network_flush",
+                   {"ok": all_ok, "verify_ok": vok, "admin": admin})
+    if not all_ok:
+        failed = ", ".join(s["step"] for s in steps
+                           if not s["ok"] and not s["skipped"])
+        return False, f"Flush Network failed at: {failed}.", steps
+    if not vok:
+        return True, f"Flush Network done, but verify failed: {vmsg}", steps
+    msg = "Flush Network done — stale caches cleared, connection kept."
+    if skipped_any:
+        msg += (" (Some steps skipped — run as Administrator for a full "
+                "flush.)")
+    return True, msg, steps
+
+
 def _powershell(command):
     """Run one PowerShell command. Returns (ok, message, stdout)."""
     return _run(["powershell", "-NoProfile", "-NonInteractive",

@@ -732,7 +732,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.5.6", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.6.0", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
@@ -1666,8 +1666,49 @@ class App(ctk.CTk):
 
     # ------------------------- Network page (v2.4) -------------------------
     def _build_network(self, page):
-        scroll = ctk.CTkScrollableFrame(page, fg_color="transparent")
+        # v2.6.0: 4 subtabs instead of one long scroll - every job has
+        # its own place, so you never hunt through the whole tab.
+        header = ctk.CTkFrame(page, fg_color="transparent")
+        header.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(header, text="Overview = see  \u2022  Test = measure  \u2022  Fix = DNS & Refresh  \u2022  Repair = broken connection",
+                     text_color=C_MUT, font=(FONT, 12), anchor="w").pack(side="left")
+        ctk.CTkButton(header, text="Guide", width=90,
+                      fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
+                      command=self._open_network_guide).pack(side="right")
+        tabs = ctk.CTkTabview(page)
+        tabs.pack(fill="both", expand=True)
+        tabs.add("Overview")
+        tabs.add("Test & Diagnose")
+        tabs.add("DNS & Refresh")
+        tabs.add("Repair")
+        self._build_net_overview(tabs.tab("Overview"))
+        self._build_net_test(tabs.tab("Test & Diagnose"))
+        self._build_net_dns(tabs.tab("DNS & Refresh"))
+        self._build_net_repair(tabs.tab("Repair"))
+
+    def _net_tab_scroll(self, parent):
+        scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
         scroll.pack(fill="both", expand=True)
+        return scroll
+
+    def _open_network_guide(self):
+        """Open the Network tab guideline (huong-dan-tab-network.html)."""
+        import webbrowser
+        from pathlib import Path
+        from tkinter import messagebox
+        guide = Path(__file__).resolve().parent.parent / "huong-dan-tab-network.html"
+        if guide.exists():
+            try:
+                webbrowser.open(guide.as_uri())
+                return
+            except Exception:  # noqa: BLE001
+                pass
+        messagebox.showinfo("Network Guide",
+                            f"Guide file not found:\n{guide}",
+                            parent=self)
+
+    def _build_net_overview(self, parent):
+        scroll = self._net_tab_scroll(parent)
 
         # --- Network Info ---
         ctk.CTkLabel(scroll, text="Network Info", font=(FONT, 14, "bold"),
@@ -1688,7 +1729,6 @@ class App(ctk.CTk):
         ctk.CTkLabel(scroll, text="Compare with: ipconfig /all in Command Prompt.",
                      text_color=C_MUT, font=(FONT, 11), anchor="w"
                      ).pack(anchor="w", pady=(0, 12))
-
         # --- Port & SSH Inspector ---
         ctk.CTkLabel(scroll, text="Port & SSH Inspector", font=(FONT, 14, "bold"),
                      anchor="w").pack(anchor="w", pady=(0, 4))
@@ -1726,6 +1766,9 @@ class App(ctk.CTk):
                      text_color=C_MUT, font=(FONT, 11), anchor="w"
                      ).pack(anchor="w", pady=(0, 12))
 
+    def _build_net_test(self, parent):
+        scroll = self._net_tab_scroll(parent)
+
         # --- Speed Test ---
         ctk.CTkLabel(scroll, text="Speed Test (before / after)", font=(FONT, 14, "bold"),
                      anchor="w").pack(anchor="w", pady=(0, 4))
@@ -1748,6 +1791,50 @@ class App(ctk.CTk):
         self.net_speed_msg = ctk.CTkLabel(srow, text="", text_color=C_MUT,
                                           font=(FONT, 11))
         self.net_speed_msg.pack(side="left", padx=10)
+        # --- Network Diagnostics (v2.5) ---
+        ctk.CTkLabel(scroll, text="Network Diagnostics", font=(FONT, 14, "bold"),
+                     anchor="w").pack(anchor="w", pady=(0, 4))
+        self.diag_btn = ctk.CTkButton(scroll, text="Run Diagnostics", width=160,
+                                      fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
+                                      command=self._run_diagnostics)
+        self.diag_btn.pack(anchor="w", pady=(0, 4))
+        self.diag_box = ctk.CTkTextbox(scroll, font=(MONO, 12), height=170)
+        self.diag_box.pack(fill="x", pady=(0, 4))
+        self.diag_box.insert("1.0", "Press Run Diagnostics.")
+        self.diag_box.configure(state="disabled")
+        # --- Bandwidth Hog Finder (v2.5) ---
+        ctk.CTkLabel(scroll, text="Bandwidth Hog Finder", font=(FONT, 14, "bold"),
+                     anchor="w").pack(anchor="w", pady=(12, 4))
+        ctk.CTkLabel(scroll, text="Ranked by active connections (per-app byte counts "
+                                  "are not available).",
+                     text_color=C_MUT, font=(FONT, 11), anchor="w").pack(anchor="w")
+        self.hogs_total_lbl = ctk.CTkLabel(scroll, text="Total: -",
+                                           font=(FONT, 12), anchor="w")
+        self.hogs_total_lbl.pack(anchor="w", pady=(0, 4))
+        self.hogs_tree = _dark_tree(scroll)
+        self.hogs_tree["columns"] = ("conn", "remote")
+        self.hogs_tree.heading("#0", text="Process (PID)")
+        self.hogs_tree.heading("conn", text="Connections")
+        self.hogs_tree.heading("remote", text="Remote IPs")
+        self.hogs_tree.column("#0", width=300)
+        self.hogs_tree.column("conn", width=120)
+        self.hogs_tree.column("remote", width=380)
+        self.hogs_tree.pack(fill="x", pady=(0, 4))
+        hrow = ctk.CTkFrame(scroll, fg_color="transparent")
+        hrow.pack(fill="x", pady=(0, 4))
+        self.hogs_btn = ctk.CTkButton(hrow, text="Find Bandwidth Hogs", width=170,
+                                      fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
+                                      command=self._find_hogs)
+        self.hogs_btn.pack(side="left", padx=(0, 8))
+        self.hogs_kill_btn = ctk.CTkButton(hrow, text="End selected", width=130,
+                                           fg_color="#b91c1c", text_color=C_ONCOLOR, hover_color="#991b1b",
+                                           command=self._end_hog)
+        self.hogs_kill_btn.pack(side="left")
+        self.hogs_msg = ctk.CTkLabel(hrow, text="", text_color=C_MUT, font=(FONT, 11))
+        self.hogs_msg.pack(side="left", padx=10)
+
+    def _build_net_dns(self, parent):
+        scroll = self._net_tab_scroll(parent)
 
         # --- Quick Refresh ---
         ctk.CTkLabel(scroll, text="Quick Refresh", font=(FONT, 14, "bold"),
@@ -1769,6 +1856,28 @@ class App(ctk.CTk):
                                             font=(FONT, 11), wraplength=900,
                                             justify="left", anchor="w")
         self.net_refresh_msg.pack(anchor="w", pady=(0, 8))
+        # --- Flush Network (v2.6.0) ---
+        ctk.CTkLabel(scroll, text="Flush Network", font=(FONT, 14, "bold"),
+                     anchor="w").pack(anchor="w", pady=(12, 4))
+        ctk.CTkLabel(scroll, text="Clears stale DNS, ARP and NetBIOS caches that make websites "
+                                  "fail to load or load slowly. Does NOT disconnect you - "
+                                  "your IP stays the same. Steps that need Admin are skipped "
+                                  "with a note unless you run as Administrator.",
+                     text_color=C_MUT, font=(FONT, 11), anchor="w",
+                     wraplength=900, justify="left").pack(anchor="w", pady=(0, 4))
+        frow = ctk.CTkFrame(scroll, fg_color="transparent")
+        frow.pack(fill="x", pady=(0, 4))
+        self.flush_btn = ctk.CTkButton(frow, text="Flush Network", width=150,
+                                       fg_color="#047857", text_color=C_ONCOLOR, hover_color="#065f46",
+                                       command=self._flush_network)
+        self.flush_btn.pack(side="left", padx=(0, 8))
+        self.flush_prog = ctk.CTkProgressBar(frow, width=280, height=12)
+        self.flush_prog.pack(side="left", padx=6)
+        self.flush_prog.set(0)
+        self.flush_msg = ctk.CTkLabel(scroll, text="", text_color=C_MUT,
+                                      font=(FONT, 11), wraplength=900,
+                                      justify="left", anchor="w")
+        self.flush_msg.pack(anchor="w", pady=(0, 8))
 
         # --- DNS Switcher (v2.5) ---
         ctk.CTkLabel(scroll, text="DNS Switcher", font=(FONT, 14, "bold"),
@@ -1812,48 +1921,8 @@ class App(ctk.CTk):
                                     justify="left", anchor="w")
         self.dns_msg.pack(anchor="w", pady=(0, 12))
 
-        # --- Network Diagnostics (v2.5) ---
-        ctk.CTkLabel(scroll, text="Network Diagnostics", font=(FONT, 14, "bold"),
-                     anchor="w").pack(anchor="w", pady=(0, 4))
-        self.diag_btn = ctk.CTkButton(scroll, text="Run Diagnostics", width=160,
-                                      fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
-                                      command=self._run_diagnostics)
-        self.diag_btn.pack(anchor="w", pady=(0, 4))
-        self.diag_box = ctk.CTkTextbox(scroll, font=(MONO, 12), height=170)
-        self.diag_box.pack(fill="x", pady=(0, 4))
-        self.diag_box.insert("1.0", "Press Run Diagnostics.")
-        self.diag_box.configure(state="disabled")
-
-        # --- Bandwidth Hog Finder (v2.5) ---
-        ctk.CTkLabel(scroll, text="Bandwidth Hog Finder", font=(FONT, 14, "bold"),
-                     anchor="w").pack(anchor="w", pady=(12, 4))
-        ctk.CTkLabel(scroll, text="Ranked by active connections (per-app byte counts "
-                                  "are not available).",
-                     text_color=C_MUT, font=(FONT, 11), anchor="w").pack(anchor="w")
-        self.hogs_total_lbl = ctk.CTkLabel(scroll, text="Total: -",
-                                           font=(FONT, 12), anchor="w")
-        self.hogs_total_lbl.pack(anchor="w", pady=(0, 4))
-        self.hogs_tree = _dark_tree(scroll)
-        self.hogs_tree["columns"] = ("conn", "remote")
-        self.hogs_tree.heading("#0", text="Process (PID)")
-        self.hogs_tree.heading("conn", text="Connections")
-        self.hogs_tree.heading("remote", text="Remote IPs")
-        self.hogs_tree.column("#0", width=300)
-        self.hogs_tree.column("conn", width=120)
-        self.hogs_tree.column("remote", width=380)
-        self.hogs_tree.pack(fill="x", pady=(0, 4))
-        hrow = ctk.CTkFrame(scroll, fg_color="transparent")
-        hrow.pack(fill="x", pady=(0, 4))
-        self.hogs_btn = ctk.CTkButton(hrow, text="Find Bandwidth Hogs", width=170,
-                                      fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
-                                      command=self._find_hogs)
-        self.hogs_btn.pack(side="left", padx=(0, 8))
-        self.hogs_kill_btn = ctk.CTkButton(hrow, text="End selected", width=130,
-                                           fg_color="#b91c1c", text_color=C_ONCOLOR, hover_color="#991b1b",
-                                           command=self._end_hog)
-        self.hogs_kill_btn.pack(side="left")
-        self.hogs_msg = ctk.CTkLabel(hrow, text="", text_color=C_MUT, font=(FONT, 11))
-        self.hogs_msg.pack(side="left", padx=10)
+    def _build_net_repair(self, parent):
+        scroll = self._net_tab_scroll(parent)
 
         # --- Adapter Reset & Deep Reset (v2.5) ---
         ctk.CTkLabel(scroll, text="Adapter Reset & Deep Reset", font=(FONT, 14, "bold"),
@@ -2054,6 +2123,43 @@ class App(ctk.CTk):
 
         self._run_bg([self.net_refresh_btn], work, done=done,
                      status="Refreshing network...")
+
+    def _flush_network(self):
+        """Flush Network button: clear stale caches, keep the IP."""
+        self.flush_msg.configure(text="")
+        self.flush_prog.set(0)
+
+        def progress(i, total, label):
+            try:
+                self.after(0, lambda: self.flush_prog.set(
+                    i / total if total else 0))
+                self.after(0, lambda: self.flush_msg.configure(
+                    text=f"Step: {label}..."))
+            except Exception:  # noqa: BLE001
+                pass
+
+        def work():
+            return net_refresh.flush_network(progress_cb=progress)
+
+        def done(res):
+            self.flush_prog.set(0)
+            if isinstance(res, Exception):
+                self.flush_msg.configure(text=f"Error: {res}")
+                return
+            ok, msg, steps = res
+            lines = [msg]
+            for s in steps:
+                if s.get("skipped"):
+                    lines.append(f"- {s['step']}: SKIPPED — {s['message']}")
+                else:
+                    lines.append(f"- {s['step']}: "
+                                 + ("OK" if s["ok"] else f"FAILED — {s['message']}"))
+            self.flush_msg.configure(
+                text="\n".join(lines),
+                text_color=C_GRN if ok else C_RED)
+
+        self._run_bg([self.flush_btn], work, done=done,
+                     status="Flushing network caches...")
 
     # ------------------------- Network v2.5 handlers -------------------------
     def _dns_buttons(self):

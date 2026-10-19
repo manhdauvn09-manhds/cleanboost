@@ -38,6 +38,26 @@
 <main>
 
 <div class="version">
+  <h2>v2.6.0 — Network tab redesigned + Flush Network + Guideline</h2>
+  <div class="date">2026-10-19 — Network tab was one long confusing scroll; now 4 subtabs + a new Flush Network + a full user guideline</div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>Network tab split into 4 subtabs — no more hunting through one long scroll.</b>
+    <p class="why"><b>Overview</b> (see: Network Info + Ports) • <b>Test &amp; Diagnose</b> (measure: Speed Test + Diagnostics + Hog Finder) • <b>DNS &amp; Refresh</b> (light fixes: Quick Refresh + Flush Network + DNS Switcher) • <b>Repair</b> (heavy fixes: Adapter Reset + Deep Reset). A one-line map at the top says what each subtab is for, and a <b>Guide</b> button opens the guideline. All widgets and handlers are unchanged — only the layout moved.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>NEW: Flush Network — clean stale network caches without disconnecting.</b>
+    <p class="why">Clears the caches that make sites fail or load slowly: <code>ipconfig /flushdns</code> (DNS cache) → <code>nbtstat -R</code> (NetBIOS) → <code>arp -d *</code> (ARP) → <code>netsh interface ip delete arpcache</code> → ping verify. Your IP stays the same — no dropped connection, unlike Quick Refresh (which release + renews). Steps that need Admin are SKIPPED with a clear note when not running as Administrator; the rest still runs.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Docs</span><b>NEW: <code>huong-dan-tab-network.html</code> — full Network guideline in Vietnamese.</b>
+    <p class="why">Explains every Network feature in plain language: what it does, when to use it, what happens, what needs Admin, what the results mean — plus the escalation ladder (Flush → Quick Refresh → Adapter Reset → Deep Reset) and a "mạng bị sao → bấm gì" decision table. Open it from the <b>Guide</b> button on the Network tab.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.5.6 — Full stability review (every feature)</h2>
   <div class="date">2026-10-19 — Audit of every feature: background tasks, timeouts, DNS safety, Startup, Scheduler</div>
 

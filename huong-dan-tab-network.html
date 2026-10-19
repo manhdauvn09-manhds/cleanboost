@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Hướng dẫn tab Network — CleanBoost</title>
+<style>
+  body{font-family:"Segoe UI",Arial,sans-serif;max-width:900px;margin:0 auto;padding:24px;color:#17202f;background:#f6f8fb;line-height:1.6}
+  h1{font-size:26px;margin-bottom:4px} h2{font-size:20px;margin-top:32px;border-bottom:2px solid #2563eb;padding-bottom:4px}
+  h3{font-size:16px;margin-top:20px}
+  .sub{color:#4b5b76;margin-top:0}
+  .box{background:#fff;border:1px solid #dbe3f0;border-radius:10px;padding:14px 18px;margin:12px 0}
+  .warn{background:#fef3c7;border-color:#f59e0b} .danger{background:#fee2e2;border-color:#dc2626}
+  .ok{background:#dcfce7;border-color:#16a34a}
+  table{border-collapse:collapse;width:100%;background:#fff}
+  th,td{border:1px solid #dbe3f0;padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#2563eb;color:#fff}
+  code{background:#eef2f7;padding:1px 6px;border-radius:4px}
+  .tag{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:700;color:#fff}
+  .t-blue{background:#2563eb}.t-green{background:#16a34a}.t-orange{background:#d97706}.t-red{background:#dc2626}
+  .mut{color:#4b5b76} .small{font-size:13px}
+  a{color:#2563eb}
+</style>
+</head>
+<body>
+
+<h1>Hướng dẫn tab Network — CleanBoost</h1>
+<p class="sub">CleanBoost v2.6.0 — Tab Network giúp bạn <b>nhìn</b> mạng đang ra sao, <b>đo</b> mạng nhanh hay chậm, <b>sửa</b> mạng bị lỗi, và <b>dọn</b> các bộ nhớ đệm (cache) cũ của mạng. Tab này <b>không xóa file</b>, không đụng vào dữ liệu của bạn.</p>
+
+<div class="box">
+<h3 style="margin-top:0">Bản đồ tab Network — 4 ngăn nhỏ</h3>
+<p>Mở tab Network, bạn sẽ thấy 4 ngăn (sub-tab) ở trên cùng. Mỗi ngăn là một việc khác nhau, không còn phải cuộn một trang dài:</p>
+<table>
+<tr><th>Ngăn</th><th>Để làm gì</th><th>Khi nào mở</th></tr>
+<tr><td><span class="tag t-blue">Overview</span></td><td><b>Nhìn</b>: thông tin mạng + cổng đang mở</td><td>Muốn biết máy mình đang nối mạng nào, IP bao nhiêu, có cổng lạ nào mở không</td></tr>
+<tr><td><span class="tag t-green">Test &amp; Diagnose</span></td><td><b>Đo</b>: tốc độ, chẩn đoán lỗi, app nào chiếm mạng</td><td>Mạng chậm, lag, giật, không rõ lỗi ở đâu</td></tr>
+<tr><td><span class="tag t-orange">DNS &amp; Refresh</span></td><td><b>Sửa nhẹ</b>: đổi DNS, làm mới kết nối, Flush Network</td><td>Web vào chậm / lúc được lúc không / lỗi DNS</td></tr>
+<tr><td><span class="tag t-red">Repair</span></td><td><b>Sửa nặng</b>: reset card mạng, reset Winsock/TCP-IP</td><td>Mạng đứt hẳn, đã thử các cách nhẹ mà không được</td></tr>
+</table>
+<p class="small mut">Nguyên tắc: <b>luôn thử từ nhẹ đến nặng</b> — Flush Network → Quick Refresh → Adapter Reset → Deep Reset. Đừng nhảy thẳng tới Deep Reset.</p>
+</div>
+
+<h2>1. Ngăn Overview — nhìn mạng đang ra sao</h2>
+
+<h3>Network Info</h3>
+<div class="box">
+<p>Hiển thị: tên máy, card mạng, Local IP, Subnet mask, MAC, IPv6, Global IP (IP công khai), Gateway (IP router), DNS đang dùng, WiFi (tên mạng, % sóng, tốc độ link).</p>
+<ul>
+<li><b>Local IP</b> — IP của máy bạn trong mạng nhà (thường 192.168.x.x). Không có IP = máy chưa nối mạng.</li>
+<li><b>Gateway</b> — IP của router. Mất Gateway = không ra internet được.</li>
+<li><b>Global IP</b> — IP mà internet nhìn thấy. Hiển thị “-” nghĩa là không lấy được (mất mạng hoặc bị chặn), các thông tin còn lại vẫn hiện bình thường.</li>
+<li><b>DNS</b> — máy chủ dịch tên miền (google.com → IP). DNS sai/chậm = web vào chậm dù mạng vẫn “có”.</li>
+</ul>
+<p class="small mut">Đối chiếu: mở Command Prompt gõ <code>ipconfig /all</code> — các số phải khớp với nhau.</p>
+</div>
+
+<h3>Port &amp; SSH Inspector</h3>
+<div class="box">
+<p>Liệt kê mọi <b>cổng (port) đang mở</b> trên máy + app nào đang giữ cổng đó.</p>
+<ul>
+<li><b>Scope “Local only”</b> — cổng chỉ mở cho chính máy này, an toàn.</li>
+<li><b>Scope “LAN”</b> — cổng mở cho cả mạng nội bộ, máy khác trong nhà/văn phòng có thể kết nối vào.</li>
+<li><b>Level đỏ (critical)</b> — cổng nhạy cảm mở ra LAN (ví dụ 3389 Remote Desktop, 445 file sharing, 23 Telnet). Không phải lúc nào cũng nguy hiểm, nhưng nên kiểm tra: nếu bạn không dùng dịch vụ đó thì nên đóng.</li>
+<li><b>Port 22</b> — cổng SSH. Hiện “closed — safe” là bình thường nếu bạn không chạy SSH server. Hiện “OPEN” nghĩa là máy khác có thể SSH vào máy bạn — chỉ để mở khi bạn cố ý.</li>
+</ul>
+<p>Chọn một dòng rồi bấm <b>How to close</b> để xem hướng dẫn đóng cổng đó (dừng service / tắt tính năng Windows tương ứng).</p>
+</div>
+
+<h2>2. Ngăn Test &amp; Diagnose — đo và tìm lỗi</h2>
+
+<h3>Speed Test (Before / After)</h3>
+<div class="box">
+<p>Đo: ping tới 1.1.1.1 và 8.8.8.8, thời gian phân giải DNS, tốc độ download (tải file test 10&nbsp;MB).</p>
+<ul>
+<li>Lần bấm đầu tiên lưu kết quả vào <b>Before</b>. Sau khi bạn sửa mạng (ví dụ Quick Refresh / đổi DNS), bấm lại → kết quả vào <b>After</b>, app tính chênh lệch ping (số âm = tốt hơn).</li>
+<li><b>Reset</b> xóa Before/After để đo lại từ đầu.</li>
+<li>Ping cao (&gt; 200&nbsp;ms) = mạng chậm; DNS chậm (&gt; 500&nbsp;ms) = thử đổi DNS ở ngăn Fix.</li>
+</ul>
+</div>
+
+<h3>Network Diagnostics</h3>
+<div class="box">
+<p>Bấm <b>Run Diagnostics</b>, app tự kiểm tra từng khâu và <b>kết luận lỗi nằm ở đâu</b> (không phải đoán):</p>
+<table>
+<tr><th>Kết luận</th><th>Nghĩa là</th><th>Nên làm gì</th></tr>
+<tr><td>WiFi/LAN problem</td><td>Không tới được cả router</td><td>Lại gần router, kiểm tra cáp, thử Adapter Reset</td></tr>
+<tr><td>ISP / route issue</td><td>Mạng nhà OK, đường ra quốc tế chậm</td><td>Thử Quick Refresh; nếu vẫn chậm thì do nhà mạng</td></tr>
+<tr><td>DNS is slow</td><td>Phân giải tên miền chậm</td><td>Qua ngăn Fix → Measure fastest DNS → đổi DNS nhanh nhất</td></tr>
+<tr><td>Network looks fine</td><td>Mạng OK, lỗi do app/game/server kia</td><td>Không cần sửa mạng; kiểm tra app/server đó</td></tr>
+<tr><td>Could not reach the internet</td><td>Không ra internet được</td><td>Kiểm tra cáp/WiFi, thử Quick Refresh</td></tr>
+</table>
+</div>
+
+<h3>Bandwidth Hog Finder</h3>
+<div class="box">
+<p>Đo tổng tốc độ lên/xuống thật của máy trong 3 giây, và liệt kê app nào đang giữ nhiều kết nối nhất.</p>
+<ul>
+<li>Bảng xếp theo <b>số kết nối đang mở</b>, không phải theo lưu lượng từng app (Windows không cho đo lưu lượng từng app chính xác — app nói rõ giới hạn này).</li>
+<li>Chọn app rồi bấm <b>End selected</b> để tắt app đó. App hệ thống nhạy cảm sẽ hỏi xác nhận trước; app bị cấm (svchost, Windows Defender…) không thể tắt.</li>
+<li>Nếu thấy app lạ chiếm nhiều kết nối, hãy kiểm tra xem đó là app gì trước khi tắt.</li>
+</ul>
+</div>
+
+<h2>3. Ngăn DNS &amp; Refresh — sửa nhẹ</h2>
+
+<h3>Quick Refresh</h3>
+<div class="box">
+<p><b>Kết nối lại từ đầu:</b> xả DNS → nhả IP cũ (release) → xin IP mới (renew) → ping kiểm tra.</p>
+<ul>
+<li>Mạng của bạn sẽ <b>đứt khoảng vài giây</b> trong lúc renew, rồi tự nối lại.</li>
+<li>Dùng khi: mạng chập chờn, vừa đổi router, web lúc được lúc không, IP bị kẹt.</li>
+<li>Nếu bước renew thất bại, bạn sẽ <b>chưa có IP mới</b> — hãy bấm lại Quick Refresh hoặc kiểm tra cáp/WiFi.</li>
+</ul>
+</div>
+
+<h3>Flush Network <span class="tag t-green">MỚI — v2.6.0</span></h3>
+<div class="box">
+<p><b>Dọn sạch các bộ nhớ đệm cũ của mạng mà KHÔNG ngắt kết nối</b> — IP của bạn giữ nguyên, không bị đứt mạng.</p>
+<p>Nó làm 5 việc, theo thứ tự:</p>
+<table>
+<tr><th>Bước</th><th>Làm gì</th><th>Cần Admin?</th></tr>
+<tr><td>flushdns</td><td>Xóa cache DNS — quên các tên miền cũ/sai đã lưu</td><td>Không</td></tr>
+<tr><td>netbios</td><td>Xóa cache tên NetBIOS (tên máy trong mạng nội bộ)</td><td>Có</td></tr>
+<tr><td>arp</td><td>Xóa cache ARP — quên các ánh xạ IP → MAC cũ/sai</td><td>Có</td></tr>
+<tr><td>arpcache</td><td>Xóa cache ARP của card mạng</td><td>Có</td></tr>
+<tr><td>verify</td><td>Ping Gateway để chắc chắn mạng vẫn chạy</td><td>Không</td></tr>
+</table>
+<ul>
+<li><b>Dùng khi:</b> web vào chậm, một số web không vào được trong khi web khác vẫn được, vừa đổi DNS/router nhưng máy vẫn “nhớ” thông tin cũ, mạng chập chờn không rõ nguyên nhân.</li>
+<li><b>Không chạy as Administrator:</b> 3 bước cần Admin sẽ hiện <b>SKIPPED</b> kèm ghi chú, các bước còn lại vẫn chạy. Muốn flush đầy đủ, đóng app → chuột phải <code>run_cleanboost_admin.bat</code> → Run as administrator → bấm Flush Network lại.</li>
+<li><b>Khác Quick Refresh ở đâu:</b> Quick Refresh xin IP mới (có đứt mạng vài giây); Flush Network chỉ dọn cache (không đứt mạng). Nếu Flush xong vẫn lỗi, hãy thử Quick Refresh.</li>
+</ul>
+</div>
+
+<h3>DNS Switcher</h3>
+<div class="box">
+<p>Đổi máy chủ DNS của card mạng: <b>Cloudflare</b> (1.1.1.1), <b>Google</b> (8.8.8.8), <b>Quad9</b> (9.9.9.9), hoặc <b>Auto (ISP)</b> = về DNS của nhà mạng.</p>
+<ul>
+<li><b>Cần Admin</b> mới đổi được DNS. Không Admin → app báo rõ, không đổi lén.</li>
+<li><b>Trước mỗi lần đổi, DNS cũ của bạn luôn được lưu backup.</b> Bấm <b>Undo DNS change</b> để quay về đúng DNS cũ. Nếu lưu backup thất bại, app sẽ <b>hủy việc đổi</b> chứ không đổi mù.</li>
+<li><b>Measure fastest DNS</b> đo thử từng DNS rồi gợi ý cái nhanh nhất trên máy bạn — nên đo trước khi đổi, vì DNS nhanh nhất khác nhau theo từng nhà mạng.</li>
+<li>Đổi DNS chỉ ảnh hưởng việc dịch tên miền → tốc độ web, không làm nhanh/mất mạng.</li>
+</ul>
+</div>
+
+<h2>4. Ngăn Repair — sửa nặng (khi các cách nhẹ không được)</h2>
+
+<h3>Adapter Reset</h3>
+<div class="box">
+<p><b>Tắt rồi bật lại card mạng</b> (giống rút dây mạng rồi cắm lại, nhưng bằng phần mềm).</p>
+<ul>
+<li><b>Cần Admin.</b> Mạng sẽ <b>mất ~5–10 giây</b>, rồi tự nối lại. Có đếm ngược 3 giây + nút Cancel để kịp hủy.</li>
+<li>Sau khi bật lại, app tự kiểm tra card đã lên + ping được Gateway trong ~30 giây.</li>
+<li>Dùng khi: WiFi kẹt, card mạng “đơ”, mạng đứt mà Quick Refresh không cứu được.</li>
+</ul>
+</div>
+
+<div class="box danger">
+<h3 style="margin-top:0">Deep Reset — chỉ dùng khi thật cần</h3>
+<p><b>Reset Winsock + TCP/IP về mặc định của Windows.</b> Đây là cách sửa nặng nhất.</p>
+<ul>
+<li><b>Cần Admin. BẮT BUỘC khởi động lại máy</b> sau khi chạy thì mới có tác dụng.</li>
+<li>Phải tick “Tôi hiểu” mới bấm chạy được (cố ý làm khó để không bấm nhầm).</li>
+<li>Chỉ dùng khi Quick Refresh + Adapter Reset đều thất bại và mạng vẫn đứt hẳn.</li>
+</ul>
+</div>
+
+<h2>5. Mạng bị sao → bấm gì? (thang xử lý)</h2>
+<div class="box">
+<table>
+<tr><th>#</th><th>Triệu chứng</th><th>Bấm gì (theo thứ tự)</th></tr>
+<tr><td>1</td><td>Web chậm / vài web không vào được / DNS lỗi</td><td>Flush Network → (nếu chưa hết) Measure fastest DNS → đổi DNS nhanh nhất</td></tr>
+<tr><td>2</td><td>Mạng chập chờn, lúc được lúc không</td><td>Quick Refresh → Flush Network</td></tr>
+<tr><td>3</td><td>Không rõ lỗi ở đâu</td><td>Run Diagnostics → đọc kết luận → làm theo bảng kết luận ở mục 2</td></tr>
+<tr><td>4</td><td>WiFi kẹt / card mạng đơ</td><td>Adapter Reset</td></tr>
+<tr><td>5</td><td>Đã thử hết mà mạng vẫn đứt hẳn</td><td>Deep Reset → <b>khởi động lại máy</b></td></tr>
+</table>
+</div>
+
+<div class="box ok">
+<h3 style="margin-top:0">An toàn — những gì tab Network KHÔNG làm</h3>
+<ul>
+<li>Không xóa file, không đụng dữ liệu, không tắt app của bạn (trừ khi bạn tự bấm End selected / kill).</li>
+<li>Đổi DNS luôn có backup + Undo. Tắt app khởi động cùng Windows thì đổi tên chứ không xóa (xem tab Startup).</li>
+<li>Mọi thao tác đều ghi vào log (xem trong app: menu log / file action_log).</li>
+</ul>
+<p class="small mut">Tài liệu này đi kèm CleanBoost v2.6.0. File: <code>huong-dan-tab-network.html</code> — mở bằng nút <b>Guide</b> trên tab Network.</p>
+</div>
+
+</body>
+</html>
