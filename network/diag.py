@@ -35,9 +35,10 @@ def run_diagnostics():
         gateway = net.get("gateway", "")
         checks = []
 
-        # 1. Gateway ping
+        # 1. Gateway ping (v2.5.6: timeout 10s — 2 echoes take at most
+        # ~8s even on failure; the old default 20s tripled diag time).
         if gateway:
-            ok, _m, ms = net_speed.ping_host(gateway, count=2)
+            ok, _m, ms = net_speed.ping_host(gateway, count=2, timeout=10)
             if ok and ms is not None and ms <= GATEWAY_SLOW_MS:
                 checks.append(_check("Ping gateway (router)", True, ms,
                                      f"{ms:.0f} ms — local network is fine."))
@@ -54,7 +55,7 @@ def run_diagnostics():
         # 2. External pings
         ext = []
         for host in ("1.1.1.1", "8.8.8.8"):
-            ok, _m, ms = net_speed.ping_host(host, count=2)
+            ok, _m, ms = net_speed.ping_host(host, count=2, timeout=10)
             ext.append(ms if ok else None)
             checks.append(_check(f"Ping {host}", bool(ok and ms is not None),
                                  ms,

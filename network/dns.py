@@ -176,7 +176,13 @@ def set_dns(primary, secondary=None, adapter=None):
         if not adapter:
             return False, "Could not find the active network adapter."
         _ok, _msg, cur = get_current_dns(adapter)
-        _save_backup(adapter, cur.get("dns") or [])
+        # v2.5.6: the backup MUST succeed before any change — a failed
+        # backup used to mean the old DNS was lost and Undo could not
+        # restore it. Abort instead of changing DNS blindly.
+        if not _save_backup(adapter, cur.get("dns") or []):
+            return False, ("Could not save a backup of your current DNS — "
+                           "aborting so Undo stays possible. Check disk "
+                           "space / permissions and try again.")
         ok, msg = _apply_static(adapter, primary, secondary)
         action_log.log("network_dns_change",
                        {"adapter": adapter, "primary": primary,
@@ -203,7 +209,11 @@ def set_dns_auto(adapter=None):
         if not adapter:
             return False, "Could not find the active network adapter."
         _ok, _msg, cur = get_current_dns(adapter)
-        _save_backup(adapter, cur.get("dns") or [])
+        # v2.5.6: same rule as set_dns — backup must succeed first.
+        if not _save_backup(adapter, cur.get("dns") or []):
+            return False, ("Could not save a backup of your current DNS — "
+                           "aborting so Undo stays possible. Check disk "
+                           "space / permissions and try again.")
         ok, msg = _apply_dhcp(adapter)
         action_log.log("network_dns_change",
                        {"adapter": adapter, "mode": "auto", "ok": ok})
@@ -247,11 +257,13 @@ def restore_dns(adapter=None):
         return False, f"Could not restore DNS: {e}"
 
 
-def measure_dns(host="google.com", tries=3, servers=None):
+def measure_dns(host="google.com", tries=2, servers=None):
     """Resolve time per DNS server (nslookup), fastest first.
 
+    v2.5.6: 2 tries x 5s timeout (was 3 x 15s = up to 135s of
+    "Measuring..." when a provider was unreachable). Times include
+    nslookup startup, so compare servers relatively.
     Returns (ok, message, [{"name", "server", "avg_ms", "ok"}]).
-    Times include nslookup startup, so compare servers relatively.
     """
     try:
         servers = servers or PRESETS
@@ -261,7 +273,7 @@ def measure_dns(host="google.com", tries=3, servers=None):
             times = []
             for _ in range(tries):
                 start = time.time()
-                rc, _out = _run(["nslookup", host, server], timeout=15)
+                rc, _out = _run(["nslookup", host, server], timeout=5)
                 if rc == 0:
                     times.append((time.time() - start) * 1000.0)
             if times:

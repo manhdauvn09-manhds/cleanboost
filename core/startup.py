@@ -147,7 +147,17 @@ def _toggle_registry(location, key, enable):
             except OSError:
                 pass
             winreg.SetValueEx(h, new_key, 0, typ, value)
-            winreg.DeleteValue(h, key)
+            try:
+                winreg.DeleteValue(h, key)
+            except OSError:
+                # v2.5.6: rollback — without this, both the enabled AND
+                # the disabled name exist and the entry shows up twice.
+                try:
+                    winreg.DeleteValue(h, new_key)
+                except OSError:
+                    pass
+                return False, ("Could not rename startup entry "
+                               "(old value could not be removed).")
     except OSError as e:
         return False, f"Could not change startup entry: {e}"
     return True, ("Startup entry enabled." if enable
@@ -192,7 +202,10 @@ def set_enabled(key, location, enabled):
         if ok:
             item = next((i for i in items
                          if i["key"] == key and i["location"] == location), None)
-            if item and item["protected"]:
+            # v2.5.6: protection only blocks DISABLING. A protected entry
+            # that was disabled before the protection list existed must
+            # still be re-enableable — the old code blocked both ways.
+            if item and item["protected"] and not enabled:
                 return False, (f"'{item['name']}' is protected (security / "
                                "driver) and cannot be disabled.")
         if location in ("HKCU Run", "HKLM Run"):

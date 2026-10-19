@@ -34,9 +34,13 @@ def get_bandwidth_hogs(interval=3.0):
     """
     try:
         sent0, recv0 = _snapshot()
+        # v2.5.6: measure the REAL elapsed time — the old code divided by
+        # the nominal interval even when the sleep was clamped (0.5..10s),
+        # which understated the rate for out-of-range intervals.
+        t0 = time.monotonic()
         time.sleep(max(0.5, min(interval, 10.0)))
+        elapsed = max(time.monotonic() - t0, 0.001)
         sent1, recv1 = _snapshot()
-        elapsed = max(interval, 0.5)
         data = {
             "sent_per_sec": (sent1 - sent0) / elapsed,
             "recv_per_sec": (recv1 - recv0) / elapsed,

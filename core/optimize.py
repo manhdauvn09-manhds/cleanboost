@@ -17,7 +17,9 @@ from core import memory_cleaner, system_info
 def _ping():
     try:
         from network import speed as net_speed
-        _ok, _msg, ms = net_speed.ping_host("1.1.1.1", count=2)
+        # v2.5.6: timeout 10s (2 echoes max ~8s) — the old default 20s
+        # made Optimize wait up to 40s on ping alone when offline.
+        _ok, _msg, ms = net_speed.ping_host("1.1.1.1", count=2, timeout=10)
         return ms
     except Exception:
         return None

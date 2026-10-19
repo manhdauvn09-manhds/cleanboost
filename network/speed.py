@@ -52,9 +52,27 @@ def measure_dns_time(host="google.com", timeout=10):
         raise RuntimeError("nslookup failed")
     except Exception:
         # Fallback: time the resolver itself (no external tool needed).
+        # v2.5.6: getaddrinfo has NO timeout — on a broken DNS setup the
+        # system resolver can block for 20-30s+. Run it in a daemon
+        # thread and give up after 5s instead of hanging the test.
         try:
+            import threading
+            holder = {}
+
+            def _resolve():
+                try:
+                    holder["ok"] = socket.getaddrinfo(host, 443)
+                except Exception as e:  # noqa: BLE001
+                    holder["err"] = e
+
             start = time.time()
-            socket.getaddrinfo(host, 443)
+            t = threading.Thread(target=_resolve, daemon=True)
+            t.start()
+            t.join(timeout=5)
+            if t.is_alive():
+                return False, "DNS resolve timed out (after 5s).", None
+            if "err" in holder:
+                raise holder["err"]
             elapsed_ms = (time.time() - start) * 1000.0
             return True, f"DNS resolve {host}: {elapsed_ms:.0f} ms.", elapsed_ms
         except Exception as e:  # noqa: BLE001

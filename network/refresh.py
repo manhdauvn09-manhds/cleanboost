@@ -28,6 +28,16 @@ def _run(argv, timeout=60):
         return False, f"Command error: {e}", ""
 
 
+def _ping_once(host, timeout=10):
+    """One ping (ping -n/-c 1). True when the host replies."""
+    if sys.platform == "win32":
+        argv = ["ping", "-n", "1", host]
+    else:
+        argv = ["ping", "-c", "1", host]
+    ok, _msg, _out = _run(argv, timeout=timeout)
+    return ok
+
+
 def _verify():
     """Ping the gateway (fallback 1.1.1.1). Returns (ok, message)."""
     target = "1.1.1.1"
@@ -38,14 +48,9 @@ def _verify():
             target = data["gateway"]
     except Exception:
         pass
-    if sys.platform == "win32":
-        argv = ["ping", "-n", "2", target]
-    else:
-        argv = ["ping", "-c", "2", target]
-    ok, msg, _out = _run(argv, timeout=20)
-    if ok:
+    if _ping_once(target, timeout=20):
         return True, f"Connection OK (ping {target} succeeded)."
-    return False, f"Could not reach {target} after refresh: {msg}"
+    return False, f"Could not reach {target} after refresh."
 
 
 def quick_refresh(progress_cb=None):
@@ -132,6 +137,16 @@ def adapter_reset(adapter=None, cancel_event=None, progress_cb=None):
             return False, "Could not find a valid network adapter.", steps
         if cancel_event is not None and cancel_event.is_set():
             return False, "Adapter Reset cancelled.", steps
+        # v2.5.6: capture the gateway BEFORE disabling — the old verify
+        # loop re-ran the full get_network_info() (incl. up to 6s of
+        # Global-IP lookup) on every iteration, so "verify within ~30s"
+        # really took up to ~130s.
+        try:
+            from network import info as net_info
+            _ok, _msg, _data = net_info.get_network_info()
+            gateway = _data.get("gateway", "") or "1.1.1.1"
+        except Exception:
+            gateway = "1.1.1.1"
 
         plan = [
             ("disable", f'Disable-NetAdapter -Name "{adapter}" -Confirm:$false'),
@@ -155,6 +170,7 @@ def adapter_reset(adapter=None, cancel_event=None, progress_cb=None):
                 return False, f"Adapter Reset failed at {name}: {msg}", steps
 
         # Verify: adapter back UP + gateway reachable, up to ~30s.
+        # Lightweight per iteration: psutil isup check + 1 ping.
         if progress_cb:
             progress_cb(len(plan), len(plan) + 1, "verify")
         import time as _time
@@ -166,11 +182,9 @@ def adapter_reset(adapter=None, cancel_event=None, progress_cb=None):
                 up = stats.get(adapter).isup if stats.get(adapter) else False
             except Exception:
                 up = False
-            if up:
-                vok, _vmsg = _verify()
-                if vok:
-                    verified = True
-                    break
+            if up and _ping_once(gateway, timeout=5):
+                verified = True
+                break
             _time.sleep(3)
         steps.append({"step": "verify", "ok": verified,
                       "message": "Adapter is back and reachable."
@@ -179,8 +193,8 @@ def adapter_reset(adapter=None, cancel_event=None, progress_cb=None):
                        {"adapter": adapter, "ok": verified})
         if verified:
             return True, f"Adapter '{adapter}' reset — connection restored.", steps
-        return False, ("Adapter was reset but the connection did not come "
-                       "back within 30s. Check WiFi / cable.", steps)
+        return (False, "Adapter was reset but the connection did not come "
+                "back within 30s. Check WiFi / cable.", steps)
     except Exception as e:  # noqa: BLE001
         return False, f"Adapter Reset failed: {e}", steps
 

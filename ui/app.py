@@ -596,6 +596,7 @@ class App(ctk.CTk):
         _init_fonts()
         self._next_theme = None
         self._busy = False  # True while a background task runs
+        self._bg_queue = []  # v2.5.6: tasks waiting for the busy lock
         try:
             self.iconphoto(True, tk.PhotoImage(file=LOGO_PATH))
         except Exception:  # noqa: BLE001
@@ -627,16 +628,30 @@ class App(ctk.CTk):
 
         Disables the given buttons while running so a button can never be
         clicked twice (prevents duplicate threads / hangs). Re-enables them
-        when done. Returns False if a task is already running.
+        when done.
+
+        v2.5.6: tasks are QUEUED instead of dropped when one is already
+        running. The old drop behavior silently lost work (e.g. opening
+        the Network tab while the startup process-list load was still
+        running dropped both Network tasks and left "Loading..." stuck
+        forever). Buttons are disabled at queue time too, so a button
+        group can have at most one queued task.
+        Always returns True — the task will run (now or after the queue).
         """
-        if self._busy:
-            return False
-        self._busy = True
+        task = (list(buttons), work, done, status)
         for b in buttons:
             try:
                 b.configure(state="disabled")
             except Exception:  # noqa: BLE001
                 pass
+        if self._busy:
+            self._bg_queue.append(task)
+            return True
+        self._start_bg(*task)
+        return True
+
+    def _start_bg(self, buttons, work, done, status):
+        self._busy = True
         self._set_status(status)
 
         def runner():
@@ -647,18 +662,33 @@ class App(ctk.CTk):
             self.after(0, lambda: self._finish_bg(buttons, result, done))
 
         threading.Thread(target=runner, daemon=True).start()
-        return True
 
     def _finish_bg(self, buttons, result, done):
         self._busy = False
+        # Do not re-enable buttons that belong to a queued task — they
+        # stay disabled until that task runs and finishes.
+        queued_buttons = set()
+        for q_buttons, _w, _d, _s in self._bg_queue:
+            queued_buttons.update(id(b) for b in q_buttons)
         for b in buttons:
+            if id(b) in queued_buttons:
+                continue
             try:
                 b.configure(state="normal")
             except Exception:  # noqa: BLE001
                 pass
         self._set_status("")
         if done:
-            done(result)
+            try:
+                done(result)
+            except Exception as e:  # noqa: BLE001
+                # A failing done() must not stall the queue or leave
+                # the app silent — report it and keep going.
+                self._set_status(f"Error: {e}")
+        # A done() may itself have started a new task (nested _run_bg);
+        # only drain the queue when nothing is running now.
+        if self._bg_queue and not self._busy:
+            self._start_bg(*self._bg_queue.pop(0))
 
     def _set_status(self, text):
         try:
@@ -702,7 +732,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.5.5", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.5.6", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
@@ -1850,11 +1880,10 @@ class App(ctk.CTk):
     def _refresh_network_all(self):
         """First-visit Network load: info + ports in ONE task (v2.5.5).
 
-        The old code fired _refresh_net_info() then _refresh_ports()
-        back to back; the busy-guard dropped the second one, so the
-        Port table stayed empty forever (and _net_loaded blocked any
-        retry). Returns True if the task actually started; when the
-        app is busy it returns False and the next visit retries.
+        v2.5.6: tasks queue instead of being dropped, so this always
+        returns True (runs now or right after the current task).
+        The old drop behavior lost the Port load when the startup
+        process-list task was still running.
         """
         self.net_info_msg.configure(text="Loading...")
         self.net_ports_msg.configure(text="Loading...")
@@ -2432,17 +2461,24 @@ class App(ctk.CTk):
             self.s_msg.configure(text="No startup entry selected.")
             return
         targets = []
+        skipped_protected = []
         for iid in sel:
             it = self._startup_rows[int(iid)]
             if it["protected"] and not enable:
-                self.s_msg.configure(
-                    text=f"'{it['name']}' is protected and cannot be disabled.")
-                return
+                # v2.5.6: skip protected entries, do NOT abort the whole
+                # batch when other selected entries are fine.
+                skipped_protected.append(it["name"])
+                continue
             if it["enabled"] == enable:
                 continue
             targets.append(it)
         if not targets:
-            self.s_msg.configure(text="Selected entries are already in that state.")
+            if skipped_protected:
+                self.s_msg.configure(
+                    text="Selected entr(ies) are protected and cannot be "
+                         "disabled: " + ", ".join(skipped_protected))
+            else:
+                self.s_msg.configure(text="Selected entries are already in that state.")
             return
 
         def work():
@@ -2456,7 +2492,11 @@ class App(ctk.CTk):
             if isinstance(msgs, Exception):
                 self.s_msg.configure(text=f"Error: {msgs}")
                 return
-            self.s_msg.configure(text=" | ".join(msgs[:3]))
+            text = " | ".join(msgs[:3])
+            if skipped_protected:
+                text += (" | Skipped (protected): "
+                         + ", ".join(skipped_protected))
+            self.s_msg.configure(text=text)
             self._refresh_startup()
 
         self._run_bg([self.s_disable_btn, self.s_enable_btn], work, done=done,

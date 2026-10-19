@@ -92,7 +92,7 @@ class TestDns(unittest.TestCase):
 
 class TestDiag(unittest.TestCase):
     def _setup(self, gateway_ms, ext_ms, dns_ms, gateway="192.168.1.1"):
-        def ping(host, count=2):
+        def ping(host, count=2, timeout=20):
             if host == gateway:
                 return (gateway_ms is not None, "", gateway_ms)
             return (ext_ms is not None, "", ext_ms)
@@ -151,6 +151,8 @@ class TestHogs(unittest.TestCase):
         with mock.patch("network.hogs.psutil.net_io_counters",
                         side_effect=fake_counters), \
              mock.patch("network.hogs.time.sleep", return_value=None), \
+             mock.patch("network.hogs.time.monotonic",
+                        side_effect=[0.0, 3.0]), \
              mock.patch("network.hogs.psutil.net_connections",
                         return_value=conns), \
              mock.patch("network.hogs.psutil.Process",
@@ -263,7 +265,7 @@ class TestRefreshV25(unittest.TestCase):
         with mock.patch("network.refresh._is_admin", return_value=True), \
              mock.patch("network.refresh._powershell",
                         return_value=(True, "OK", "")), \
-             mock.patch("network.refresh._verify", return_value=(True, "OK")), \
+             mock.patch("network.refresh._ping_once", return_value=True), \
              mock.patch("psutil.net_if_stats",
                         return_value={"Wi-Fi": mock.Mock(isup=True)}), \
              mock.patch("time.sleep", return_value=None):
@@ -271,6 +273,23 @@ class TestRefreshV25(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual([s["step"] for s in steps],
                          ["disable", "wait", "enable", "verify"])
+
+    @_win32
+    def test_adapter_reset_verify_failed_returns_three_values(self):
+        # v2.5.6 regression: the verify-failed path returned a 2-tuple
+        # (message, steps) nested inside another tuple, so the UI's
+        # `ok, msg, steps = res` unpack crashed.
+        with mock.patch("network.refresh._is_admin", return_value=True), \
+             mock.patch("network.refresh._powershell",
+                        return_value=(True, "OK", "")), \
+             mock.patch("network.refresh._ping_once", return_value=False), \
+             mock.patch("psutil.net_if_stats",
+                        return_value={"Wi-Fi": mock.Mock(isup=True)}), \
+             mock.patch("time.sleep", return_value=None):
+            ok, msg, steps = net_refresh.adapter_reset(adapter="Wi-Fi")
+        self.assertFalse(ok)
+        self.assertIn("30s", msg)
+        self.assertEqual(steps[-1]["step"], "verify")
 
     @_win32
     def test_deep_reset_success(self):

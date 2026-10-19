@@ -38,6 +38,41 @@
 <main>
 
 <div class="version">
+  <h2>v2.5.6 — Full stability review (every feature)</h2>
+  <div class="date">2026-10-19 — Audit of every feature: background tasks, timeouts, DNS safety, Startup, Scheduler</div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Background tasks now QUEUE instead of being silently dropped.</b>
+    <p class="why">Root cause of "features don't run / stuck Loading": the busy-guard DROPPED any task started while another ran — e.g. opening the Network tab during the startup process-list load dropped both Network tasks. Now tasks wait their turn, buttons stay disabled while queued, and a failing <code>done()</code> callback can no longer stall the queue. No task is ever silently lost again.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>DNS change can no longer lose your old DNS.</b>
+    <p class="why">The backup save result was ignored: if saving <code>dns_backup.json</code> failed (disk full / permissions), the DNS was still changed and Undo could not restore it. Now the change ABORTS when the backup fails. DNS speed measure also got much faster: 2 tries × 5s timeout (was 3 × 15s = up to 135s of "Measuring...").</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Adapter Reset verify is really ~30s now (was up to ~130s).</b>
+    <p class="why">Each verify attempt re-ran the full network-info collection (including up to 6s of Global-IP lookup). Now the gateway is captured once before disabling, and each attempt is just an adapter-UP check + 1 ping. Same fix pattern elsewhere: Diagnostics/Optimize pings now use a 10s timeout (2 echoes take at most ~8s), and the speed test's DNS fallback gives up after 5s instead of letting the system resolver block for 20-30s.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Startup Manager: protected entries can be re-enabled again; batch disable no longer aborts on the first protected entry; registry rename rolls back if the old value cannot be removed (no duplicate entries).</b>
+    <p class="why">The protection check blocked BOTH directions, so a protected entry disabled before the protection list existed could never come back. Batch disable now skips protected entries with a note and continues with the rest.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Scheduler commands (schtasks / crontab) now time out after 30s instead of hanging forever; Hog Finder divides by the real measured time instead of the nominal interval.</b>
+    <p class="why">Verified during the audit: every other subprocess call already had a timeout; only the scheduler was missing one. The Hog Finder rate was understated whenever the measurement sleep was clamped.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Verified OK, no change needed</span><b>Reviewed and confirmed correct:</b>
+    <p class="why">Quarantine / Destroy / Restore (progress + prune_stale), Disk Cleaner scan/clean + high-risk 2nd confirm, Health Score, Optimize chain (quarantine-only level 1), Processes list/kill (blocked processes refused by the core layer), Quick Refresh, Deep Reset, Speed Test, Diagnostics conclusion logic, single-instance guard, DISM (30-min timeout, never killed mid-run), restore-point creation (180s timeout), auto-clean (quarantine-only, low-risk default_on), and all UI progress bars (all widget updates marshalled to the UI thread via <code>after(0, …)</code>).</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.5.5 — Network tab actually loads</h2>
   <div class="date">2026-10-19 — Fix: Port table stayed empty forever, "Loading..." could stick</div>
 
