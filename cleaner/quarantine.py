@@ -147,6 +147,33 @@ def list_items() -> list:
     return _load().get("items", [])
 
 
+def prune_stale() -> int:
+    """Drop index entries whose stored file no longer exists (v2.5.3).
+
+    Stored files can vanish outside the app (user deleted them by hand,
+    another cleaner, a failed restore). Those entries clog the table
+    forever — they are not real files anymore, so remove them from the
+    list. Entries with an invalid stored path are dropped too (we would
+    refuse to touch them anyway). Returns how many were removed.
+    Never raises.
+    """
+    try:
+        idx = _load()
+        items = idx.get("items", [])
+        kept = []
+        for item in items:
+            stored_abs = _safe_stored(item.get("stored", ""))
+            if stored_abs and os.path.lexists(stored_abs):
+                kept.append(item)
+        removed = len(items) - len(kept)
+        if removed:
+            idx["items"] = kept
+            _save(idx)
+        return removed
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 def total_size() -> int:
     return sum(i.get("size", 0) for i in list_items())
 
@@ -188,34 +215,41 @@ def delete_permanent(item_id: str):
     return True, f"Permanently deleted: {os.path.basename(item['orig'])}"
 
 
-def delete_all():
+def delete_all(progress_cb=None):
     """Permanently delete EVERYTHING in quarantine (Destroy All).
 
     Returns (ok, message, summary) with summary =
     {"deleted": int, "failed": [(id, name, reason)], "freed": bytes}.
     Failed items stay in the index with their real error reported —
     they are never silently kept. Never raises.
+    progress_cb(done, total) is called after each item (for the UI
+    progress bar); a failing callback never breaks the delete.
     """
     try:
         idx = _load()
         items = list(idx.get("items", []))
         kept, failed, deleted, freed = [], [], 0, 0
-        for item in items:
+        for pos, item in enumerate(items, start=1):
             stored_abs = _safe_stored(item.get("stored", ""))
             if not stored_abs:
                 kept.append(item)
                 failed.append((item.get("id", "?"),
                                os.path.basename(item.get("orig", "?")),
                                "Invalid path — refusing to delete outside quarantine."))
-                continue
-            ok, msg = _remove_path(stored_abs)
-            if ok:
-                deleted += 1
-                freed += item.get("size", 0)
             else:
-                kept.append(item)
-                failed.append((item.get("id", "?"),
-                               os.path.basename(item.get("orig", "?")), msg))
+                ok, msg = _remove_path(stored_abs)
+                if ok:
+                    deleted += 1
+                    freed += item.get("size", 0)
+                else:
+                    kept.append(item)
+                    failed.append((item.get("id", "?"),
+                                   os.path.basename(item.get("orig", "?")), msg))
+            if progress_cb is not None:
+                try:
+                    progress_cb(pos, len(items))
+                except Exception:  # noqa: BLE001
+                    pass
         idx["items"] = kept
         _save(idx)
         if failed:

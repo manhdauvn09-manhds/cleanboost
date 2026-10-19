@@ -118,6 +118,45 @@ class QuarantineCase(unittest.TestCase):
         ok, _msg = Q._remove_path(os.path.join(self.tmp.name, "nope"))
         self.assertTrue(ok)
 
+    # ---- v2.5.3: real folder sizes, prune_stale, delete progress ----
+
+    def test_put_records_real_size_for_folder(self):
+        d = os.path.join(self.tmp.name, "folder")
+        os.makedirs(d)
+        for name, size in (("a.bin", 100), ("b.bin", 200)):
+            with open(os.path.join(d, name), "wb") as f:
+                f.write(b"x" * size)
+        item = Q.put(d)
+        self.assertEqual(item["size"], 300)
+
+    def test_prune_stale_removes_missing_and_keeps_existing(self):
+        gone = Q.put(self._make_source("gone.txt"))
+        kept = Q.put(self._make_source("kept.txt"))
+        stored = os.path.join(self.tmp.name, gone["stored"])
+        os.remove(stored)  # vanished outside the app
+        self.assertEqual(Q.prune_stale(), 1)
+        remaining = Q.list_items()
+        self.assertEqual(len(remaining), 1)
+        self.assertEqual(remaining[0]["id"], kept["id"])
+        self.assertEqual(Q.prune_stale(), 0)  # second run: nothing to do
+
+    def test_prune_stale_drops_invalid_stored_path(self):
+        Q._save({"items": [{
+            "id": "evil", "orig": "C:\\evil.exe", "stored": "../evil.exe",
+            "size": 1, "rule": "", "quarantined_at": "2026-01-01T00:00:00"}]})
+        self.assertEqual(Q.prune_stale(), 1)
+        self.assertEqual(Q.list_items(), [])
+
+    def test_delete_all_reports_progress(self):
+        for name in ("a.txt", "b.txt", "c.txt"):
+            Q.put(self._make_source(name))
+        seen = []
+        ok, _msg, summary = Q.delete_all(
+            progress_cb=lambda done, total: seen.append((done, total)))
+        self.assertTrue(ok)
+        self.assertEqual(summary["deleted"], 3)
+        self.assertEqual(seen, [(1, 3), (2, 3), (3, 3)])
+
 
 if __name__ == "__main__":
     unittest.main()

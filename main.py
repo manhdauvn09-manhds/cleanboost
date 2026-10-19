@@ -201,6 +201,11 @@ def cmd_clean(args):
 def cmd_quarantine(args):
     from cleaner import quarantine as Q
     if args.qcmd == "list":
+        removed = Q.prune_stale()
+        if removed:
+            print(f"Removed {removed} stale entr"
+                  f"{'y' if removed == 1 else 'ies'} whose files "
+                  "no longer exist.")
         items = Q.list_items()
         if not items:
             print("Quarantine is empty.")

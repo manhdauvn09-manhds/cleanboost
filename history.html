@@ -38,6 +38,26 @@
 <main>
 
 <div class="version">
+  <h2>v2.5.3 — Quarantine progress + Pro UI theme</h2>
+  <div class="date">2026-10-19 — Progress bar for Destroy/Delete, stale entries auto-removed, human sizes, invisible-button fix</div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>Quarantine now shows a progress bar for Destroy / Delete / Restore / Purge.</b>
+    <p class="why">Destroy All and Delete used to run with no visible progress at all. The Quarantine tab now has a progress bar that fills per item (determinate for Delete/Restore/Destroy, indeterminate for Purge) and resets when done. Every finished operation still refreshes the table, so deleted items leave the list.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Stale quarantine entries are auto-removed; sizes are human-readable.</b>
+    <p class="why">Two causes of the "many rows, size = 0" table: (1) entries whose stored file had already vanished outside the app stayed listed forever — <code>prune_stale()</code> now drops them on every refresh (and in the CLI list); (2) the Size column formatted everything in GB with 2 decimals, so any file under ~5 MB showed as "0.00 GB" — sizes now read 850 B / 12.3 KB / 4.5 MB / 1.23 GB. Folders already recorded their real walked size; only the display lied.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Buttons no longer invisible in the light theme.</b>
+    <p class="why">Root cause: secondary buttons used a pale background (<code>C_CARD2</code>) with CustomTkinter's default white text — white on pale = invisible until hover turned the button blue. Every button now carries an explicit (background, text, hover) triple from a theme-aware palette: secondary buttons get dark text on light theme and light text on dark theme; primary/success/warning/danger buttons get white text on darkened colors. All pairs verified by contrast check (WCAG ≥ 4.5:1, e.g. primary blue/white 5.17:1, light secondary 12.66:1). Sidebar nav also got stronger inactive text; the selected tab uses the deeper primary blue.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.5.2 — Security Review</h2>
   <div class="date">2026-10-19 — Full audit: deletion can never kill the OS, dangerous actions confirm + show full info</div>
 
