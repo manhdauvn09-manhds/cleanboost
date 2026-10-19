@@ -38,6 +38,21 @@
 <main>
 
 <div class="version">
+  <h2>v2.5.5 — Network tab actually loads</h2>
+  <div class="date">2026-10-19 — Fix: Port table stayed empty forever, "Loading..." could stick</div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Network tab first open now loads BOTH info and ports.</b>
+    <p class="why">Root cause: opening the Network tab fired two background tasks back to back (<code>_refresh_net_info()</code> then <code>_refresh_ports()</code>), but the busy-guard drops any second task while one is running — so the Port table was silently never loaded, and the "first visit done" flag blocked any retry. Now one combined task loads info + ports together, and the "done" flag is only set when the task really started; if the app is busy, the next visit retries instead of showing a dead tab.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>"Loading..." can no longer get stuck.</b>
+    <p class="why">When the busy-guard dropped a refresh, the label was left saying "Loading..." forever. A dropped refresh now says "Busy — please try again." The Global IP lookup timeout also dropped from 5s to 3s per provider (was up to 10s of "Loading..." on a slow/blocked connection) — a missing Global IP just shows "-" and the rest loads.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.5.4 — Hotfix: app would not start</h2>
   <div class="date">2026-10-19 — v2.5.3 shipped a typo that crashed startup; the launcher hid the error</div>
 

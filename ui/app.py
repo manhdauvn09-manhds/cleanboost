@@ -702,7 +702,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.5.4", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.5.5", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
@@ -777,9 +777,8 @@ class App(ctk.CTk):
         if key == "proc":
             self._refresh_proc()
         if key == "net" and not getattr(self, "_net_loaded", False):
-            self._net_loaded = True
-            self._refresh_net_info()
-            self._refresh_ports()
+            if self._refresh_network_all():
+                self._net_loaded = True
         if key == "startup" and not getattr(self, "_startup_loaded", False):
             self._startup_loaded = True
             self._refresh_startup()
@@ -1848,6 +1847,68 @@ class App(ctk.CTk):
                                       justify="left", anchor="w")
         self.reset_msg.pack(anchor="w", pady=(0, 8))
 
+    def _refresh_network_all(self):
+        """First-visit Network load: info + ports in ONE task (v2.5.5).
+
+        The old code fired _refresh_net_info() then _refresh_ports()
+        back to back; the busy-guard dropped the second one, so the
+        Port table stayed empty forever (and _net_loaded blocked any
+        retry). Returns True if the task actually started; when the
+        app is busy it returns False and the next visit retries.
+        """
+        self.net_info_msg.configure(text="Loading...")
+        self.net_ports_msg.configure(text="Loading...")
+
+        def work():
+            info = net_info.get_network_info()
+            ok, msg, rows = net_ports.list_listening_ports()
+            sok, smsg, ssh = net_ports.check_ssh()
+            return info, (ok, msg, rows, sok, smsg, ssh)
+
+        def done(res):
+            if isinstance(res, Exception):
+                self.net_info_msg.configure(text=f"Error: {res}")
+                self.net_ports_msg.configure(text=f"Error: {res}")
+                return
+            info, ports = res
+            self._net_info_done(info)
+            self._net_ports_done(ports)
+
+        started = self._run_bg([self.net_info_btn, self.net_ports_btn],
+                               work, done=done, status="Loading network...")
+        if not started:
+            self.net_info_msg.configure(text="Busy — please try again.")
+            self.net_ports_msg.configure(text="Busy — please try again.")
+        return bool(started)
+
+    def _net_info_done(self, res):
+        if isinstance(res, Exception):
+            self.net_info_msg.configure(text=f"Error: {res}")
+            return
+        ok, msg, data = res
+        self.net_info_box.configure(state="normal")
+        self.net_info_box.delete("1.0", "end")
+        self.net_info_box.insert("1.0", net_info.format_info(data))
+        self.net_info_box.configure(state="disabled")
+        self.net_info_msg.configure(text=msg)
+
+    def _net_ports_done(self, res):
+        if isinstance(res, Exception):
+            self.net_ports_msg.configure(text=f"Error: {res}")
+            return
+        ok, msg, rows, _sok, smsg, ssh = res
+        for i in self.net_port_tree.get_children():
+            self.net_port_tree.delete(i)
+        for r in rows:
+            self.net_port_tree.insert(
+                "", "end", text=f"{r['port']}  ({r['bind_ip'] or '-'})",
+                values=(r["process"], r["scope"], r["level"]),
+                tags=(r["level"],))
+        is_open = ssh.get("open", False)
+        self.net_ssh_lbl.configure(
+            text=smsg, text_color=C_RED if is_open else C_GRN)
+        self.net_ports_msg.configure(text=msg if ok else msg)
+
     def _refresh_net_info(self):
         self.net_info_msg.configure(text="Loading...")
 
@@ -1855,18 +1916,13 @@ class App(ctk.CTk):
             return net_info.get_network_info()
 
         def done(res):
-            if isinstance(res, Exception):
-                self.net_info_msg.configure(text=f"Error: {res}")
-                return
-            ok, msg, data = res
-            self.net_info_box.configure(state="normal")
-            self.net_info_box.delete("1.0", "end")
-            self.net_info_box.insert("1.0", net_info.format_info(data))
-            self.net_info_box.configure(state="disabled")
-            self.net_info_msg.configure(text=msg)
+            self._net_info_done(res)
 
-        self._run_bg([self.net_info_btn], work, done=done,
-                     status="Loading network info...")
+        if not self._run_bg([self.net_info_btn], work, done=done,
+                            status="Loading network info..."):
+            # Busy-guard dropped the task — never leave "Loading..."
+            # stuck on screen (v2.5.5).
+            self.net_info_msg.configure(text="Busy — please try again.")
 
     def _refresh_ports(self):
         self.net_ports_msg.configure(text="Loading...")
@@ -1877,24 +1933,11 @@ class App(ctk.CTk):
             return ok, msg, rows, sok, smsg, ssh
 
         def done(res):
-            if isinstance(res, Exception):
-                self.net_ports_msg.configure(text=f"Error: {res}")
-                return
-            ok, msg, rows, _sok, smsg, ssh = res
-            for i in self.net_port_tree.get_children():
-                self.net_port_tree.delete(i)
-            for r in rows:
-                self.net_port_tree.insert(
-                    "", "end", text=f"{r['port']}  ({r['bind_ip'] or '-'})",
-                    values=(r["process"], r["scope"], r["level"]),
-                    tags=(r["level"],))
-            is_open = ssh.get("open", False)
-            self.net_ssh_lbl.configure(
-                text=smsg, text_color=C_RED if is_open else C_GRN)
-            self.net_ports_msg.configure(text=msg if ok else msg)
+            self._net_ports_done(res)
 
-        self._run_bg([self.net_ports_btn], work, done=done,
-                     status="Listing ports...")
+        if not self._run_bg([self.net_ports_btn], work, done=done,
+                            status="Listing ports..."):
+            self.net_ports_msg.configure(text="Busy — please try again.")
 
     def _port_guide(self):
         sel = self.net_port_tree.selection()

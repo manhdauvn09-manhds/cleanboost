@@ -82,11 +82,16 @@ def _pick_primary(adapters):
 
 
 def _global_ip():
-    """Public IP via ipify (fallback ifconfig.me). "" when offline."""
+    """Public IP via ipify (fallback ifconfig.me). "" when offline.
+
+    v2.5.5: 3s per URL (was 5s) — the Network tab's "Loading..."
+    waited up to 10s on a slow/blocked connection before showing
+    anything. A missing Global IP just shows "-" and the rest loads.
+    """
     for url in _GLOBAL_IP_URLS:
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "CleanBoost/2.4"})
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=3) as resp:
                 txt = resp.read().decode("utf-8", "replace").strip()
             if _is_valid_ipv4(txt):
                 return txt, url
