@@ -38,6 +38,26 @@
 <main>
 
 <div class="version">
+  <h2>v2.5.4 — Hotfix: app would not start</h2>
+  <div class="date">2026-10-19 — v2.5.3 shipped a typo that crashed startup; the launcher hid the error</div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Fixed: <code>run_cleanboost.bat</code> did nothing after pulling v2.5.3.</b>
+    <p class="why">Root cause was my own bulk rename in v2.5.3: replacing <code>hover_color=C_ACC</code> also matched inside <code>hover_color=C_ACC_BTN_HOV</code>, producing the undefined name <code>C_BTN2_HOV_BTN_HOV</code> on the Scan button. The GUI crashed with NameError while building the Cleaner page — and because the launcher uses <code>pythonw.exe</code> (no console), the error was invisible: the app just never appeared. Full repo audit with pyflakes now shows zero undefined names.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>A startup crash can never be invisible again.</b>
+    <p class="why">Two safety nets: (1) <code>gui.py</code> now saves any startup traceback to <code>startup_error.log</code> and shows it in an error dialog; (2) new <code>run_cleanboost_debug.bat</code> launches with a visible console so the error stays on screen. A regression test (<code>tests/test_theme.py</code>) fails on any undefined <code>C_*</code> name in <code>ui/app.py</code>, so this class of bug cannot ship silently again.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Note</span><b>After pulling, you normally do NOT need to do anything else.</b>
+    <p class="why"><code>git_pull.bat</code> + double-click <code>run_cleanboost.bat</code> is enough: the launcher auto-runs <code>setup_windows.bat</code> on first use and auto-syncs libraries via <code>check_env.py</code> whenever <code>requirements.txt</code> changes. Setup is only needed once (or if <code>.venv</code> was deleted). This time was the exception — the pulled build itself was broken — so pull once more to get this hotfix.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.5.3 — Quarantine progress + Pro UI theme</h2>
   <div class="date">2026-10-19 — Progress bar for Destroy/Delete, stale entries auto-removed, human sizes, invisible-button fix</div>
 

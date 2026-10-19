@@ -702,7 +702,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.5.3", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.5.4", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
@@ -1182,7 +1182,7 @@ class App(ctk.CTk):
         row.pack(fill="x", pady=(0, 6))
         self.c_scan_btn = ctk.CTkButton(row, text="Scan", width=150, height=38,
                                         fg_color=C_ACC_BTN,
-                                        hover_color=C_BTN2_HOV_BTN_HOV,
+                                        hover_color=C_ACC_BTN_HOV,
                                         text_color=C_ONCOLOR,
                                         font=(FONT, 13, "bold"),
                                         command=self._scan)
