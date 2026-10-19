@@ -12,6 +12,10 @@ _HARD_BLOCK_WIN = {
     "system", "registry", "smss.exe", "csrss.exe", "wininit.exe",
     "services.exe", "lsass.exe", "lsaiso.exe", "winlogon.exe",
     "fontdrvhost.exe", "spoolsv.exe",
+    # v2.5.2: svchost hosts Windows services — killing one kills every
+    # service in it and can destabilize the OS. TrustedInstaller owns
+    # Windows Update / component store — killing it can corrupt updates.
+    "svchost.exe", "trustedinstaller.exe",
 }
 # Kill được nhưng gây khó chịu -> bắt user xác nhận
 _WARN_WIN = {

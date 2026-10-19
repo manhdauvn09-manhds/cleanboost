@@ -82,6 +82,10 @@ def _remove_path(path):
         return False, f"Could not delete: {e}"
 
 
+# Public alias: clean.py uses it for orphan folders.
+remove_path = _remove_path
+
+
 def _safe_stored(stored_rel: str):
     """Return the absolute path inside quarantine, or None on traversal."""
     base = os.path.realpath(root())

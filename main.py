@@ -63,6 +63,13 @@ def cmd_top(args):
 
 
 def cmd_kill(args):
+    # v2.5.2: force kill can lose unsaved work — confirm first (unless --yes).
+    if args.force and not args.yes:
+        ans = input("Force kill can lose unsaved work in those apps. "
+                    "Continue? [y/N] ").strip().lower()
+        if ans != "y":
+            print("Cancelled.")
+            return
     for pid in args.pid:
         try:
             name = psutil.Process(pid).name() or f"PID {pid}"

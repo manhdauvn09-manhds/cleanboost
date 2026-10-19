@@ -64,10 +64,27 @@ def count_restore_points() -> int:
         return 0
 
 
+def _parse_vss_time(text):
+    """Parse vssadmin 'Creation Time'. None when unparseable (keep it)."""
+    from datetime import datetime
+    for fmt in ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %H:%M:%S",
+                "%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S",
+                "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M"):
+        try:
+            return datetime.strptime(text.strip(), fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def prune_old_restore_points():
     """🔴 Xóa các restore point cũ, GIỮ LẠI điểm mới nhất.
 
-    Dùng vssadmin: liệt kê shadow copies, xóa tất cả trừ mới nhất.
+    SECURITY (v2.5.2): the newest is picked by parsed Creation Time
+    (not list order), only shadow copies on the SystemDrive are
+    touched (other volumes' backups are left alone), and anything
+    whose date cannot be parsed is KEPT — never delete what we
+    cannot positively identify as old.
     """
     if sys.platform != "win32":
         return False, "Windows only.", 0
@@ -76,18 +93,31 @@ def prune_old_restore_points():
     rc, out = _run(["vssadmin", "list", "shadows"], timeout=120)
     if rc != 0:
         return False, "Could not read shadow copy list.", 0
-    # mỗi block "Shadow Copy ID: {xxx}" kèm "Original Volume: (C:)\\?\Volume{...}\"
-    ids = re.findall(r"Shadow Copy ID:\s*(\{[0-9a-fA-F-]+\})", out)
-    if len(ids) <= 1:
-        return True, "Only 0-1 restore point(s) — nothing to remove.", 0
-    # vssadmin liệt kê theo thời gian tăng dần -> giữ cái cuối
+    system_drive = os.environ.get("SystemDrive", "C:").rstrip("\\").upper()
+    entries = []
+    for block in re.split(r"\n\s*\n", out):
+        m_id = re.search(r"Shadow Copy ID:\s*(\{[0-9a-fA-F-]+\})", block)
+        if not m_id:
+            continue
+        m_vol = re.search(r"Original Volume:\s*\(([A-Za-z]):\)", block)
+        m_time = re.search(r"Creation Time:\s*(.+)", block)
+        vol = (m_vol.group(1).upper() + ":") if m_vol else ""
+        ts = _parse_vss_time(m_time.group(1)) if m_time else None
+        entries.append({"id": m_id.group(1), "vol": vol, "ts": ts})
+    mine = [e for e in entries if e["vol"] == system_drive and e["ts"] is not None]
+    if len(mine) <= 1:
+        return True, ("Only 0-1 dated restore point(s) on the system drive "
+                      "— nothing to remove."), 0
+    newest = max(mine, key=lambda e: e["ts"])
     removed = 0
-    for sid in ids[:-1]:
+    for e in mine:
+        if e["id"] == newest["id"]:
+            continue
         rc2, _ = _run(["vssadmin", "delete", "shadows",
-                       f"/shadow={sid}", "/quiet"], timeout=120)
+                       f"/shadow={e['id']}", "/quiet"], timeout=120)
         if rc2 == 0:
             removed += 1
-    return True, (f"Deleted {removed}/{len(ids) - 1} old restore point(s), "
+    return True, (f"Deleted {removed}/{len(mine) - 1} old restore point(s), "
                   "kept the newest."), 0
 
 

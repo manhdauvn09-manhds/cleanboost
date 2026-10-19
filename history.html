@@ -38,6 +38,46 @@
 <main>
 
 <div class="version">
+  <h2>v2.5.2 — Security Review</h2>
+  <div class="date">2026-10-19 — Full audit: deletion can never kill the OS, dangerous actions confirm + show full info</div>
+
+  <div class="entry">
+    <span class="tag sec">Security</span><b>Quarantine mode is now truly quarantine-only.</b>
+    <p class="why">Audit found the specials (Recycle Bin, Trash, journal, Windows Update cache, DISM, Hibernate, restore-point prune, Docker, apt, snap, kernels) ignored the Quarantine flag and deleted permanently anyway — so "Quarantine (safe)" and the weekly auto-clean silently emptied the Recycle Bin forever. Irreversible specials are now SKIPPED in Quarantine mode with a clear message; only orphan folders (which move through quarantine) still run. Auto-clean is therefore really quarantine-only.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag sec">Security</span><b>Medium-confidence orphans are never permanently deleted.</b>
+    <p class="why">Orphan detection is a guess ("recently used" folders got "medium" confidence) but Delete mode removed them all the same. Now only high-confidence orphans may be permanently deleted; medium ones always go to quarantine, even in Delete mode. The freed-space math counts only bytes actually gone.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag sec">Security</span><b>HIGH-RISK rules need a second confirmation with full info (GUI).</b>
+    <p class="why">The CLI already required typing "yes" for high-risk rules, but the GUI asked only once. Now after the normal confirm dialog, high-risk groups (DISM ResetBase, old restore points, Disable Hibernate) get a second dialog listing each rule with its full impact + warning, plus an "I understand the risks" checkbox that gates the Run button.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag sec">Security</span><b>More processes protected from killing.</b>
+    <p class="why"><code>svchost.exe</code> (hosts Windows services — killing one kills every service in it) and <code>trustedinstaller.exe</code> (Windows Update / component store) are now hard-blocked; Windows Defender (<code>msmpeng.exe</code>) stays hard-blocked via the anti-malware rule — verified by test, not just assumed. Force kill (GUI + CLI) now confirms "unsaved work will be lost" first.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag sec">Security</span><b>Restore-point prune keeps the newest by real date, SystemDrive only.</b>
+    <p class="why">It used to trust vssadmin list order and touched every volume's shadow copies. Now it parses Creation Time, keeps the newest dated copy on the system drive, leaves other volumes' backups alone, and never deletes a copy it cannot date.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag sec">Security</span><b>Killed apps can no longer silently "come back".</b>
+    <p class="why">Killing a process does not remove its startup entry, so it returns on next boot. After a kill, the app now checks the Startup list and tells you exactly which killed app starts with Windows, pointing to the Startup tab to disable it. The single-instance dialog also says plainly when the old process could not be verified as CleanBoost.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Note</span><b>Reviewed and deliberately left as-is.</b>
+    <p class="why">Restore-point creation failure does NOT block level 2/3 cleaning (many PCs have System Restore disabled by policy — blocking would make those levels unusable); the failure is shown in the result. Level-2/3 cleaning still creates a restore point first when possible, and every file delete still passes the protected-path check at delete time. The deep-pattern rule's note previously claimed "Program Files skipped" — corrected to what the code actually excludes.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.5.1 — Quarantine Destroy</h2>
   <div class="date">2026-10-19 — Fix silent Quarantine delete failures + Destroy All</div>
 

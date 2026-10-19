@@ -137,13 +137,19 @@ def ensure_single_instance() -> bool:
         looks = _looks_like_us(other)
         if looks is not False:
             priv = _priv_hint(other)
+            # v2.5.2: when the process cannot be verified as CleanBoost
+            # (looks is None — usually higher-privilege), say so plainly
+            # so the user only confirms a kill they actually started.
+            verify_note = ("\n(Could not verify this is CleanBoost — only "
+                           "proceed if you started it.)"
+                           if looks is None else "")
             root = tk.Tk()
             root.withdraw()
             try:
                 ans = messagebox.askyesno(
                     "CleanBoost is already running",
                     f"Another CleanBoost instance is already running\n"
-                    f"(PID {other}, rights: {priv}).\n\n"
+                    f"(PID {other}, rights: {priv}).{verify_note}\n\n"
                     "Close the old instance and open a new one?\n\n"
                     "• Yes: close the old, open the new\n"
                     "• No: keep the old, do not open another",

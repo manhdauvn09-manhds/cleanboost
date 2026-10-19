@@ -338,6 +338,73 @@ class ConfirmCleanDialog(ctk.CTkToplevel):
         self.destroy()
 
 
+class HighRiskConfirmDialog(ctk.CTkToplevel):
+    """Second confirmation for HIGH-RISK rules (v2.5.2).
+
+    Shown AFTER the normal ConfirmCleanDialog when any selected rule
+    has risk == "high" (e.g. DISM ResetBase, old restore points,
+    Disable Hibernate). Lists each high-risk rule with its full
+    warning + impact, and requires the "I understand" checkbox
+    before the Run button enables.
+    """
+
+    def __init__(self, master, high_rules):
+        super().__init__(master)
+        self.result = False
+        self.title("HIGH-RISK — confirm again")
+        self.geometry("640x520")
+        _make_modal(self, master)
+
+        ctk.CTkLabel(self, text="HIGH-RISK actions selected",
+                     font=(FONT, 17, "bold"), text_color=C_RED).pack(pady=(16, 4))
+        ctk.CTkLabel(self, text="These actions are IRREVERSIBLE or remove a safety net. "
+                                "Read each one before proceeding.",
+                     font=(FONT, 12), text_color=C_MUT, wraplength=580,
+                     justify="left").pack(padx=16, pady=(0, 8))
+
+        box = ctk.CTkScrollableFrame(self, label_text="High-risk groups")
+        box.pack(fill="both", expand=True, padx=16, pady=6)
+        for rule in high_rules:
+            f = ctk.CTkFrame(box, fg_color=C_CARD2)
+            f.pack(fill="x", padx=6, pady=4)
+            ctk.CTkLabel(f, text=rule["name"], font=(FONT, 13, "bold"),
+                         wraplength=520, justify="left").pack(anchor="w", padx=10, pady=(8, 0))
+            ctk.CTkLabel(f, text=rule.get("impact", ""), text_color=C_MUT,
+                         font=(FONT, 11), wraplength=520,
+                         justify="left").pack(anchor="w", padx=10, pady=(2, 2))
+            if rule.get("warning"):
+                ctk.CTkLabel(f, text=f"WARNING: {rule['warning']}",
+                             text_color=C_RED, font=(FONT, 11, "bold"),
+                             wraplength=520, justify="left").pack(anchor="w", padx=10, pady=(0, 8))
+            if rule.get("note"):
+                ctk.CTkLabel(f, text=f"Note: {rule['note']}",
+                             text_color=C_MUT, font=(FONT, 11),
+                             wraplength=520, justify="left").pack(anchor="w", padx=10, pady=(0, 8))
+
+        var = tk.BooleanVar(value=False)
+        run_btn = ctk.CTkButton(self, text="I understand — run high-risk actions",
+                                fg_color="#b91c1c", hover_color="#991b1b",
+                                state="disabled",
+                                command=self._yes)
+        cb = ctk.CTkCheckBox(self, text="I understand the risks above.",
+                             variable=var,
+                             command=lambda: run_btn.configure(
+                                 state="normal" if var.get() else "disabled"))
+        cb.pack(padx=16, pady=8, anchor="w")
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x", padx=16, pady=(0, 16))
+        ctk.CTkButton(row, text="Cancel", fg_color=C_CARD2,
+                      command=self._no).pack(side="right", padx=6)
+        run_btn.pack(side="right", padx=6)
+
+    def _yes(self):
+        self.result = True
+        self.destroy()
+
+    def _no(self):
+        self.destroy()
+
+
 class ResultDialog(ctk.CTkToplevel):
     """Show cleanup results in monospace text."""
 
@@ -605,7 +672,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.5.1", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.5.2", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
@@ -998,6 +1065,13 @@ class App(ctk.CTk):
             self.p_msg.configure(text="No process selected.")
             return
         from tkinter import messagebox
+        # v2.5.2: force kill can lose unsaved work — confirm first.
+        if force and not messagebox.askyesno(
+                "Force kill",
+                "Force kill closes apps immediately — unsaved work in "
+                "them will be LOST.\n\nForce kill the selected process(es)?",
+                parent=self):
+            return
         targets = []
         for iid in sel:
             pid = int(iid)
@@ -1022,7 +1096,26 @@ class App(ctk.CTk):
                 self.p_msg.configure(text=f"Error: {n}")
                 return
             action_log.log("kill_gui", {"force": force, "killed": n})
-            self.p_msg.configure(text=f"Closed {n}/{len(targets)} process(es).")
+            msg = f"Closed {n}/{len(targets)} process(es)."
+            # v2.5.2: a killed app with a startup entry comes back on
+            # next boot — tell the user instead of letting it silently
+            # "restart the old app".
+            if sys.platform == "win32" and n:
+                try:
+                    ok_s, _m, entries = startup_mod.list_startup()
+                    if ok_s:
+                        respawn = set()
+                        for _pid, pname in targets:
+                            for e in entries:
+                                if e["enabled"] and pname.lower() in (e["value"] or "").lower():
+                                    respawn.add(e["name"])
+                        if respawn:
+                            msg += (" Note: " + ", ".join(sorted(respawn))
+                                    + " start(s) with Windows and will come back "
+                                      "after restart — disable in the Startup tab.")
+                except Exception:  # noqa: BLE001
+                    pass
+            self.p_msg.configure(text=msg)
             self._refresh_proc()
 
         self._run_bg([self.p_kill_btn, self.p_fkill_btn], work, done=done,
@@ -1181,6 +1274,15 @@ class App(ctk.CTk):
         self.wait_window(dlg)
         if not dlg.result:
             return
+        # v2.5.2: HIGH-RISK rules need a SECOND confirmation with full
+        # warnings + an "I understand" checkbox (CLI already requires
+        # typing "yes" for high-risk rules).
+        high = [rule for rule, _ in items if rule.get("risk") == "high"]
+        if high:
+            dlg2 = HighRiskConfirmDialog(self, high)
+            self.wait_window(dlg2)
+            if not dlg2.result:
+                return
         if self._level.get() >= 2 and sys.platform == "win32":
             messagebox.showinfo("Safety",
                                 "A System Restore Point will be created before cleaning.",

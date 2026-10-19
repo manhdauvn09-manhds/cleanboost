@@ -26,6 +26,15 @@ def _clean_special(rule: dict, res: dict = None, permanent: bool = False):
     stats = {"quarantined": int, "deleted": int}.
     """
     kind = rule["special"]
+    # SECURITY (v2.5.2): Recycle Bin / Trash / journal CANNOT be
+    # quarantined — they permanently delete. In Quarantine mode they
+    # must be skipped, otherwise "Quarantine (safe)" and the weekly
+    # auto-clean would silently empty the Recycle Bin forever.
+    if kind in ("recycle_bin", "trash", "journal") and not permanent:
+        return (False,
+                "Skipped in Quarantine mode — this action permanently "
+                "deletes and cannot be quarantined. "
+                "Use Delete permanently to run it.", 0, {})
     if kind in ("update_cache", "dism_cleanup", "dism_resetbase",
                 "orphan_apps", "hibernate_off", "old_restore_points",
                 "docker_prune", "apt_clean", "snap_old", "old_kernels"):
@@ -76,6 +85,16 @@ def _clean_special2(rule: dict, res: dict = None, permanent: bool = False):
     """
     from cleaner import sysclean, dism, orphan_detector
     kind = rule["special"]
+    # SECURITY (v2.5.2): action-specials (DISM, hibernate, restore-point
+    # prune, docker, apt, snap, kernels, update cache) CANNOT be
+    # quarantined — they permanently change the system. In Quarantine
+    # mode they must be skipped, not silently executed. Orphan folders
+    # are the exception: they move through quarantine properly.
+    if kind != "orphan_apps" and not permanent:
+        return (False,
+                "Skipped in Quarantine mode — this action permanently "
+                "changes the system and cannot be quarantined. "
+                "Use Delete permanently to run it.", 0, {})
     if kind == "update_cache":
         ok, msg, freed = sysclean.empty_update_cache()
         return ok, msg, freed, {"deleted": 0}
@@ -88,32 +107,46 @@ def _clean_special2(rule: dict, res: dict = None, permanent: bool = False):
     if kind == "orphan_apps":
         orphans = (res or {}).get("orphans") or orphan_detector.detect_orphans()
         n, n_del, freed, failed = 0, 0, 0, []
+        q_bytes = 0
         for o in orphans:
             p = o["path"]
             if protected.is_protected_path(p) or not os.path.exists(p):
                 continue
+            # SECURITY (v2.5.2): medium-confidence orphans are only
+            # SUGGESTIONS (recently used, may still belong to an app).
+            # They are NEVER permanently deleted — quarantine only,
+            # even in Delete mode. Only high-confidence orphans may
+            # be permanently deleted.
+            delete_for_real = permanent and o.get("confidence") != "medium"
             try:
-                if permanent:
-                    import shutil
-                    if os.path.isdir(p) and not os.path.islink(p):
-                        shutil.rmtree(p)
-                    else:
-                        os.remove(p)
+                if delete_for_real:
+                    ok_rm, msg_rm = Q.remove_path(p)
+                    if not ok_rm:
+                        failed.append((p, msg_rm))
+                        continue
                     n_del += 1
                 else:
                     Q.put(p, rule["id"])
                     n += 1
-                freed += o.get("size", 0)
+                    q_bytes += o.get("size", 0)
+                # "freed" counts only bytes actually gone from the disk:
+                # in Delete mode, medium-confidence folders move to
+                # quarantine (still on disk) and must NOT count.
+                if delete_for_real or not permanent:
+                    freed += o.get("size", 0)
             except OSError as e:
                 failed.append((p, str(e)))
         if permanent:
-            msg = f"Permanently deleted {n_del} orphan folder(s)."
+            msg = f"Permanently deleted {n_del} high-confidence orphan folder(s)."
+            if n:
+                msg += (f" {n} medium-confidence folder(s) were quarantined, "
+                        "not deleted.")
         else:
             msg = f"Quarantined {n} orphan folder(s)."
         if failed:
             msg += f" ({len(failed)} error(s))"
         stats = {"quarantined": n,
-                 "quarantined_bytes": 0 if permanent else freed,
+                 "quarantined_bytes": q_bytes if permanent else freed,
                  "deleted": n_del}
         return True, msg, freed, stats
     if kind == "hibernate_off":

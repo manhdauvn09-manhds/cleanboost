@@ -71,6 +71,12 @@ def run_optimize(progress_cb=None):
                 report["quarantined_files"] = summary.get("quarantined", 0)
                 report["quarantined_bytes"] = summary.get("quarantined_bytes", 0)
                 report["deleted_files"] = summary.get("deleted", 0)
+                # Surface skipped/failed specials (e.g. Recycle Bin is
+                # skipped in Quarantine mode) so nothing is silent.
+                for sp in summary.get("specials", []):
+                    if not sp["ok"]:
+                        report["messages"].append(
+                            f"{sp['rule']}: {sp['message']}")
                 if summary.get("failed"):
                     report["messages"].append(
                         f"{len(summary['failed'])} group(s) skipped "

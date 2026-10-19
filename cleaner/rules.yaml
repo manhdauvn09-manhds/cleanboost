@@ -351,8 +351,8 @@ rules:
     risk: medium
     default_on: true
     action: quarantine
-    impact: "Only junk matched by pattern (*.tmp, *.log...) - system folders excluded."
-    note: "Skips System32/WinSxS/Program Files/Documents... Scan may take a while"
+    impact: "Only junk matched by pattern (*.tmp, *.log...) - protected system folders excluded."
+    note: "Protected system folders (System32, WinSxS, Installer) and Documents/Desktop/Downloads/Pictures/Videos are never touched. Matched files go to quarantine (restorable) - review before Delete permanently. Scan may take a while"
 
   - id: win_dev_caches
     name: "Developer caches (npm/pip/cargo/...)"
