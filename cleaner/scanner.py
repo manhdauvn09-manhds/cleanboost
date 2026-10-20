@@ -11,6 +11,7 @@ import sys
 import time
 
 from cleaner import engine
+from cleaner.fs_walk import safe_walk
 from safety import protected
 
 
@@ -75,7 +76,9 @@ def scan_rule(rule: dict, collect_paths: bool = False) -> dict:
         if os.path.isfile(base):
             consider(base)
         else:
-            for root, _dirs, filenames in os.walk(base, onerror=lambda e: None):
+            # v2.6.1: safe_walk never descends into junctions (Windows
+            # "Application Data" loops) and caps depth.
+            for root, _dirs, filenames in safe_walk(base):
                 if protected.is_protected_path(root):
                     continue
                 for fn in filenames:
@@ -94,7 +97,7 @@ def scan_rule(rule: dict, collect_paths: bool = False) -> dict:
 
 def _dir_size(path: str):
     total, count = 0, 0
-    for root, _d, files in os.walk(path, onerror=lambda e: None):
+    for root, _d, files in safe_walk(path):
         for fn in files:
             try:
                 total += os.path.getsize(os.path.join(root, fn))

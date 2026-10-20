@@ -18,6 +18,7 @@ import time
 import psutil
 
 from safety import protected
+from cleaner.fs_walk import safe_walk
 
 # Thư mục hệ thống trong AppData: không bao giờ coi là mồ côi
 _SKIP_DIRS_WIN = {"microsoft", "windows", "packages"}
@@ -105,7 +106,7 @@ def _running_names() -> set:
 
 def _dir_size(path: str, cap_files: int = 200000) -> int:
     total, n = 0, 0
-    for root, _d, files in os.walk(path, onerror=lambda e: None):
+    for root, _d, files in safe_walk(path):
         for fn in files:
             try:
                 total += os.path.getsize(os.path.join(root, fn))

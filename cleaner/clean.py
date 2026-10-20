@@ -14,6 +14,7 @@ import sys
 
 from cleaner import scanner
 from cleaner import quarantine as Q
+from cleaner.fs_walk import safe_walk
 from cleaner import restore_point, action_log
 from core import privilege
 from safety import protected
@@ -54,7 +55,7 @@ def _clean_special(rule: dict, res: dict = None, permanent: bool = False):
             p = os.path.expanduser(f"~/.local/share/Trash/{sub}")
             if not os.path.isdir(p):
                 continue
-            for root, dirs, files in os.walk(p):
+            for root, dirs, files in safe_walk(p):
                 for fn in files:
                     fp = os.path.join(root, fn)
                     try:

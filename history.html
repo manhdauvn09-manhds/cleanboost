@@ -38,6 +38,26 @@
 <main>
 
 <div class="version">
+  <h2>v2.6.1 — Stuck-task fix: scans can no longer run forever + the UI always shows progress</h2>
+  <div class="date">2026-10-20 — User report: a button stayed disabled from morning to noon and there was no way to tell whether the task had finished</div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Disk walks can no longer loop on Windows junctions (the likely cause of the hours-long "running" task).</b>
+    <p class="why">Every folder walk in the app (scanner, quarantine sizing, cleaner, sysclean, orphan detector) now goes through <code>cleaner/fs_walk.safe_walk()</code>: it never descends into directory junctions/symlinks and caps depth at 60. Windows has a built-in self-junction (<code>AppData\Local\Application Data</code> points back at <code>AppData\Local</code>) that <code>os.walk</code> follows even with followlinks=False — one cache scan could re-walk the same tree a dozen times and run for hours. That class of hang is now impossible.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Watchdog</span><b>The status bar now shows live progress for every background task: "Working... - 03:25".</b>
+    <p class="why">A ticking elapsed timer (every second) means you can always SEE a task is still running and for how long — no more guessing. Tasks still running after 15 minutes trigger a clear warning ("may be stuck — close and reopen the app to recover") and are logged (<code>bg_task_start</code> / <code>bg_task_done</code> / <code>bg_task_slow</code> in the action log, with duration), so any future slow task is diagnosable from the log alone.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>A worker thread dying with a non-standard error can no longer lock the UI forever.</b>
+    <p class="why">The task runner catches <code>BaseException</code> (e.g. SystemExit) in addition to <code>Exception</code> and reports it as a failed task, so the buttons always come back. Before, one such death left <code>_busy</code> set forever and every button dead until restart.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.6.0 — Network tab redesigned + Flush Network + Guideline</h2>
   <div class="date">2026-10-19 — Network tab was one long confusing scroll; now 4 subtabs + a new Flush Network + a full user guideline</div>
 

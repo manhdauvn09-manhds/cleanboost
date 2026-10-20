@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 from core import privilege
+from cleaner.fs_walk import safe_walk
 
 
 def _run(cmd: list, timeout: int = 300):
@@ -133,7 +134,7 @@ def empty_update_cache():
     _run(["net", "stop", "wuauserv"], timeout=60)
     freed, n = 0, 0
     try:
-        for root, _d, files in os.walk(dl, onerror=lambda e: None):
+        for root, _d, files in safe_walk(dl):
             for fn in files:
                 fp = os.path.join(root, fn)
                 try:
@@ -153,7 +154,7 @@ def apt_cache_size() -> int:
     total = 0
     for p in ("/var/cache/apt/archives",):
         if os.path.isdir(p):
-            for root, _d, files in os.walk(p, onerror=lambda e: None):
+            for root, _d, files in safe_walk(p):
                 for fn in files:
                     try:
                         total += os.path.getsize(os.path.join(root, fn))

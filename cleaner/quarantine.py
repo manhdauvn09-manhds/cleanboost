@@ -11,6 +11,7 @@ import stat
 import sys
 import uuid
 from datetime import datetime, timezone
+from cleaner.fs_walk import safe_walk
 
 RETENTION_DAYS = 14
 
@@ -110,7 +111,7 @@ def _path_size(p: str) -> int:
         except OSError:
             return 0
     total = 0
-    for dirpath, _d, files in os.walk(p, onerror=lambda e: None):
+    for dirpath, _d, files in safe_walk(p):
         for fn in files:
             try:
                 total += os.path.getsize(os.path.join(dirpath, fn))

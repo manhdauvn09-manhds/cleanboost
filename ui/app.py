@@ -8,6 +8,7 @@ window. Light/dark theme with a toggle. UI language: English.
 import os
 import sys
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk
 
@@ -650,20 +651,59 @@ class App(ctk.CTk):
         self._start_bg(*task)
         return True
 
+    # A task still running after this long is probably stuck (v2.6.1).
+    _BG_WARN_SECONDS = 15 * 60
+
     def _start_bg(self, buttons, work, done, status):
         self._busy = True
         self._set_status(status)
+        self._bg_task_id = getattr(self, "_bg_task_id", 0) + 1
+        tid = self._bg_task_id
+        t0 = time.time()
+        action_log.log("bg_task_start", {"task": status, "id": tid})
+        self._bg_tick(tid, t0, status, warned=False)
 
         def runner():
             try:
                 result = work()
             except Exception as e:  # noqa: BLE001
                 result = e
-            self.after(0, lambda: self._finish_bg(buttons, result, done))
+            except BaseException as e:  # noqa: BLE001
+                # SystemExit / KeyboardInterrupt in a worker thread must
+                # never leave the UI locked forever (v2.6.1).
+                result = RuntimeError(
+                    f"Task aborted ({type(e).__name__}): {e}")
+            self.after(0, lambda: self._finish_bg(
+                tid, t0, buttons, result, done, status))
 
         threading.Thread(target=runner, daemon=True).start()
 
-    def _finish_bg(self, buttons, result, done):
+    def _bg_tick(self, tid, t0, status, warned):
+        """Every second: show the task's elapsed time in the status bar
+        so the user always knows it is still running (v2.6.1)."""
+        if not getattr(self, "_busy", False) \
+                or getattr(self, "_bg_task_id", 0) != tid:
+            return
+        try:
+            elapsed = time.time() - t0
+            mm, ss = int(elapsed // 60), int(elapsed % 60)
+            self._set_status(f"{status} - {mm:02d}:{ss:02d}")
+            if elapsed >= self._BG_WARN_SECONDS and not warned:
+                warned = True
+                self._set_status(
+                    f"Still running after 15 min: {status} Long jobs "
+                    "(DISM, big scans) can take a while - but if this was "
+                    "a quick task it may be stuck: close and reopen the "
+                    "app to recover.")
+                action_log.log("bg_task_slow",
+                               {"task": status, "id": tid,
+                                "seconds": int(elapsed)})
+            self.after(1000, lambda: self._bg_tick(tid, t0, status,
+                                                   warned))
+        except Exception:  # noqa: BLE001 - window going away, etc.
+            pass
+
+    def _finish_bg(self, tid, t0, buttons, result, done, status):
         self._busy = False
         # Do not re-enable buttons that belong to a queued task — they
         # stay disabled until that task runs and finishes.
@@ -678,6 +718,10 @@ class App(ctk.CTk):
             except Exception:  # noqa: BLE001
                 pass
         self._set_status("")
+        action_log.log("bg_task_done",
+                       {"task": status, "id": tid,
+                        "seconds": round(time.time() - t0, 1),
+                        "error": isinstance(result, Exception)})
         if done:
             try:
                 done(result)
@@ -732,7 +776,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.6.0", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.6.1", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
