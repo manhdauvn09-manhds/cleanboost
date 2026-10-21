@@ -6,6 +6,7 @@ Every long task runs in a background thread with its buttons disabled
 window. Light/dark theme with a toggle. UI language: English.
 """
 import os
+import queue
 import sys
 import threading
 import time
@@ -121,6 +122,26 @@ def _init_fonts():
 
 def _bg(fn):
     threading.Thread(target=fn, daemon=True).start()
+
+
+def _post_ui(widget, fn):
+    """Run fn() on the UI thread, from any thread (v2.7.0).
+
+    Worker threads must NEVER call widget.after() themselves: when the
+    main thread is not inside the main loop at that moment, Tk raises
+    RuntimeError("main thread is not in main loop") IN THE WORKER,
+    killing it silently (invisible under pythonw.exe) and leaving the
+    UI's busy lock set forever. Instead, fn is put on the App's
+    thread-safe queue and executed by the UI thread's drain loop.
+    """
+    w = widget
+    while getattr(w, "master", None) is not None:
+        w = w.master
+    q = getattr(w, "_ui_queue", None)
+    if q is not None:
+        q.put(fn)
+    else:  # no App (should not happen) - last-resort direct call
+        widget.after(0, fn)
 
 
 def _fmt_gb(n):
@@ -289,7 +310,7 @@ class DetailDialog(ctk.CTkToplevel):
                     continue
         rows.sort(key=lambda x: x[1], reverse=True)
         total_n = len(res.get("orphans") or res.get("paths") or [])
-        self.after(0, lambda: self._fill(rows, total_n))
+        _post_ui(self, lambda: self._fill(rows, total_n))
 
     def _fill(self, rows, total_n):
         show = rows[:300]
@@ -598,6 +619,9 @@ class App(ctk.CTk):
         self._next_theme = None
         self._busy = False  # True while a background task runs
         self._bg_queue = []  # v2.5.6: tasks waiting for the busy lock
+        # v2.7.0: thread-safe hand-off to the UI thread (see _post_ui).
+        self._ui_queue = queue.Queue()
+        self.after(60, self._drain_ui_queue)
         try:
             self.iconphoto(True, tk.PhotoImage(file=LOGO_PATH))
         except Exception:  # noqa: BLE001
@@ -624,7 +648,8 @@ class App(ctk.CTk):
         self._refresh_quarantine()
 
     # ------------------------- busy guard -------------------------
-    def _run_bg(self, buttons, work, done=None, status="Working..."):
+    def _run_bg(self, buttons, work, done=None, status="Working...",
+                timeout=None):
         """Run work() in a background thread.
 
         Disables the given buttons while running so a button can never be
@@ -637,9 +662,18 @@ class App(ctk.CTk):
         running dropped both Network tasks and left "Loading..." stuck
         forever). Buttons are disabled at queue time too, so a button
         group can have at most one queued task.
+
+        v2.7.0: every task has a hard TIMEOUT (default 180s; long jobs
+        pass a bigger one). A task that overruns is ABANDONED: the busy
+        lock is released, its buttons come back, the queue moves on, and
+        the timeout is logged with the task name. The stray thread is a
+        daemon and its late result is ignored, so no single hang — in
+        any feature, on any machine — can lock the UI forever again.
         Always returns True — the task will run (now or after the queue).
         """
-        task = (list(buttons), work, done, status)
+        if timeout is None:
+            timeout = self._BG_DEFAULT_TIMEOUT
+        task = (list(buttons), work, done, status, timeout)
         for b in buttons:
             try:
                 b.configure(state="disabled")
@@ -651,65 +685,97 @@ class App(ctk.CTk):
         self._start_bg(*task)
         return True
 
+    # Default hard limit per background task (v2.7.0). Long jobs pass
+    # their own bigger timeout to _run_bg.
+    _BG_DEFAULT_TIMEOUT = 180
     # A task still running after this long is probably stuck (v2.6.1).
     _BG_WARN_SECONDS = 15 * 60
 
-    def _start_bg(self, buttons, work, done, status):
+    def _start_bg(self, buttons, work, done, status, timeout):
         self._busy = True
         self._set_status(status)
         self._bg_task_id = getattr(self, "_bg_task_id", 0) + 1
         tid = self._bg_task_id
+        self._bg_current = (tid, list(buttons))
         t0 = time.time()
         action_log.log("bg_task_start", {"task": status, "id": tid})
-        self._bg_tick(tid, t0, status, warned=False)
+        # v2.7.0: the worker thread NEVER touches Tk. It only stores
+        # its result here and sets the event; the UI thread polls.
+        holder = {"event": threading.Event(), "result": None}
 
         def runner():
             try:
-                result = work()
+                holder["result"] = work()
             except Exception as e:  # noqa: BLE001
-                result = e
+                holder["result"] = e
             except BaseException as e:  # noqa: BLE001
                 # SystemExit / KeyboardInterrupt in a worker thread must
                 # never leave the UI locked forever (v2.6.1).
-                result = RuntimeError(
+                holder["result"] = RuntimeError(
                     f"Task aborted ({type(e).__name__}): {e}")
-            self.after(0, lambda: self._finish_bg(
-                tid, t0, buttons, result, done, status))
+            holder["event"].set()
 
         threading.Thread(target=runner, daemon=True).start()
+        self._bg_poll(tid, t0, buttons, done, status, timeout, holder,
+                      warned=False, last_sec=-1)
 
-    def _bg_tick(self, tid, t0, status, warned):
-        """Every second: show the task's elapsed time in the status bar
-        so the user always knows it is still running (v2.6.1)."""
-        if not getattr(self, "_busy", False) \
-                or getattr(self, "_bg_task_id", 0) != tid:
+    def _bg_poll(self, tid, t0, buttons, done, status, timeout, holder,
+                 warned, last_sec):
+        """UI-thread poll for the running task (v2.7.0, replaces calling
+        after() from the worker thread — see _post_ui): finish when the
+        worker posts its result, abandon at the timeout, tick the
+        elapsed clock every second."""
+        if tid != getattr(self, "_bg_task_id", 0) \
+                or not getattr(self, "_busy", False):
             return
-        try:
-            elapsed = time.time() - t0
-            mm, ss = int(elapsed // 60), int(elapsed % 60)
+        if holder["event"].is_set():
+            self._finish_bg(tid, t0, buttons, holder["result"], done,
+                            status)
+            return
+        elapsed = time.time() - t0
+        if elapsed >= timeout:
+            self._abandon_bg(tid, status, timeout)
+            return
+        sec = int(elapsed)
+        if sec != last_sec:
+            last_sec = sec
+            mm, ss = sec // 60, sec % 60
             self._set_status(f"{status} - {mm:02d}:{ss:02d}")
             if elapsed >= self._BG_WARN_SECONDS and not warned:
                 warned = True
                 self._set_status(
                     f"Still running after 15 min: {status} Long jobs "
-                    "(DISM, big scans) can take a while - but if this was "
-                    "a quick task it may be stuck: close and reopen the "
-                    "app to recover.")
+                    "(DISM, big scans) can take a while - the task will "
+                    "be stopped automatically at its time limit.")
                 action_log.log("bg_task_slow",
                                {"task": status, "id": tid,
                                 "seconds": int(elapsed)})
-            self.after(1000, lambda: self._bg_tick(tid, t0, status,
-                                                   warned))
-        except Exception:  # noqa: BLE001 - window going away, etc.
+        self.after(100, lambda: self._bg_poll(
+            tid, t0, buttons, done, status, timeout, holder, warned,
+            last_sec))
+
+    def _drain_ui_queue(self):
+        """Execute callbacks posted from worker threads (v2.7.0)."""
+        try:
+            while True:
+                fn = self._ui_queue.get_nowait()
+                try:
+                    fn()
+                except Exception:  # noqa: BLE001
+                    pass
+        except queue.Empty:
+            pass
+        try:
+            self.after(60, self._drain_ui_queue)
+        except Exception:  # noqa: BLE001 - window going away
             pass
 
-    def _finish_bg(self, tid, t0, buttons, result, done, status):
-        self._busy = False
-        # Do not re-enable buttons that belong to a queued task — they
-        # stay disabled until that task runs and finishes.
+    def _release_buttons(self, buttons):
+        """Re-enable a finished/abandoned task's buttons — except the
+        ones that belong to a task still waiting in the queue."""
         queued_buttons = set()
-        for q_buttons, _w, _d, _s in self._bg_queue:
-            queued_buttons.update(id(b) for b in q_buttons)
+        for q in self._bg_queue:
+            queued_buttons.update(id(b) for b in q[0])
         for b in buttons:
             if id(b) in queued_buttons:
                 continue
@@ -717,6 +783,36 @@ class App(ctk.CTk):
                 b.configure(state="normal")
             except Exception:  # noqa: BLE001
                 pass
+
+    def _abandon_bg(self, tid, status, timeout):
+        """Give up on an overrunning task (v2.7.0): release the lock and
+        its buttons, say what happened, keep the queue moving. The
+        task's late _finish_bg is ignored via the task-id check."""
+        cur = getattr(self, "_bg_current", (tid, []))
+        buttons = cur[1] if cur[0] == tid else []
+        self._bg_task_id = tid + 1  # invalidate the stray thread's finish
+        self._busy = False
+        self._release_buttons(buttons)
+        action_log.log("bg_task_timeout",
+                       {"task": status, "id": tid, "timeout": timeout})
+        self._set_status(
+            f"Stopped a stuck task after {timeout}s: {status} "
+            "The app is usable again - please try once more. "
+            "(Details are in the action log.)")
+        if self._bg_queue:
+            self._start_bg(*self._bg_queue.pop(0))
+
+    def _finish_bg(self, tid, t0, buttons, result, done, status):
+        if tid != getattr(self, "_bg_task_id", 0):
+            # Late finish of an abandoned task: ignore it completely so
+            # it cannot clobber the state of whatever runs now.
+            action_log.log("bg_task_late_finish",
+                           {"task": status, "id": tid})
+            return
+        self._busy = False
+        # Do not re-enable buttons that belong to a queued task — they
+        # stay disabled until that task runs and finishes.
+        self._release_buttons(buttons)
         self._set_status("")
         action_log.log("bg_task_done",
                        {"task": status, "id": tid,
@@ -776,7 +872,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.6.1", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.7.0", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
@@ -812,7 +908,12 @@ class App(ctk.CTk):
         self.page_host = ctk.CTkFrame(main, fg_color=C_BG)
         self.page_host.pack(fill="both", expand=True, padx=20, pady=10)
         for key, label in PAGES:
-            f = ctk.CTkFrame(self.page_host, fg_color=C_BG)
+            if key == "dash":
+                # v2.7.0: Overview scrolls — the Top-10 panel made it
+                # taller than smaller windows.
+                f = ctk.CTkScrollableFrame(self.page_host, fg_color=C_BG)
+            else:
+                f = ctk.CTkFrame(self.page_host, fg_color=C_BG)
             self._pages[key] = (f, label)
         self._build_dashboard(self._pages["dash"][0])
         self._build_processes(self._pages["proc"][0])
@@ -850,6 +951,8 @@ class App(ctk.CTk):
             self._refresh_quarantine()
         if key == "proc":
             self._refresh_proc()
+        if key == "dash":
+            self._refresh_top()
         if key == "net" and not getattr(self, "_net_loaded", False):
             if self._refresh_network_all():
                 self._net_loaded = True
@@ -871,7 +974,7 @@ class App(ctk.CTk):
                 if not self._busy:
                     self._set_status(text)
             self.after(10000, self._tick_status)
-        _bg(lambda: self.after(0, lambda: done(work())))
+        _bg(lambda: _post_ui(self, lambda: done(work())))
 
     # ------------------------- Overview page -------------------------
     def _build_dashboard(self, page):
@@ -964,6 +1067,41 @@ class App(ctk.CTk):
                                     justify="left", anchor="w")
         self.opt_msg.pack(anchor="w", padx=16, pady=(0, 16))
 
+        # Top 10 processes by RAM / CPU (v2.7.0)
+        trow = ctk.CTkFrame(page, fg_color="transparent")
+        trow.pack(fill="x", pady=(14, 6))
+        ctk.CTkLabel(trow, text="Top 10 processes", font=(FONT, 14, "bold"),
+                     anchor="w").pack(side="left")
+        self.top_refresh_btn = ctk.CTkButton(
+            trow, text="Refresh", width=90, height=28,
+            fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
+            command=self._refresh_top)
+        self.top_refresh_btn.pack(side="left", padx=(10, 0))
+        ctk.CTkLabel(trow, text="Auto-refreshes while you stay on this page. "
+                                "To close an app: Processes tab -> select -> End task.",
+                     font=(FONT, 11), text_color=C_MUT, anchor="w").pack(side="left", padx=(10, 0))
+
+        tcols = ctk.CTkFrame(page, fg_color="transparent")
+        tcols.pack(fill="x")
+        t1 = ctk.CTkFrame(tcols, fg_color=C_CARD, corner_radius=12)
+        t1.pack(side="left", fill="both", expand=True, padx=(0, 8))
+        ctk.CTkLabel(t1, text="Top 10 by RAM", font=(FONT, 12, "bold"),
+                     anchor="w").pack(anchor="w", padx=12, pady=(10, 4))
+        self.top_ram_box = ctk.CTkTextbox(t1, height=168, font=(FONT, 11),
+                                          fg_color="transparent")
+        self.top_ram_box.pack(fill="both", expand=True, padx=8, pady=(0, 10))
+        self.top_ram_box.insert("1.0", "Loading...")
+        self.top_ram_box.configure(state="disabled")
+        t2 = ctk.CTkFrame(tcols, fg_color=C_CARD, corner_radius=12)
+        t2.pack(side="left", fill="both", expand=True, padx=(8, 0))
+        ctk.CTkLabel(t2, text="Top 10 by CPU", font=(FONT, 12, "bold"),
+                     anchor="w").pack(anchor="w", padx=12, pady=(10, 4))
+        self.top_cpu_box = ctk.CTkTextbox(t2, height=168, font=(FONT, 11),
+                                          fg_color="transparent")
+        self.top_cpu_box.pack(fill="both", expand=True, padx=8, pady=(0, 10))
+        self.top_cpu_box.insert("1.0", "Loading...")
+        self.top_cpu_box.configure(state="disabled")
+
         self.dash_msg = ctk.CTkLabel(page, text="", text_color=C_MUT,
                                      font=(FONT, 12), wraplength=900,
                                      justify="left", anchor="w")
@@ -990,15 +1128,34 @@ class App(ctk.CTk):
                 self.d_banner.pack_forget()
         except Exception:  # noqa: BLE001
             pass
+        # v2.7.0: refresh the Top-10 panel every ~20s while Overview is
+        # on screen and nothing else is running.
+        self._dash_ticks = getattr(self, "_dash_ticks", 0) + 1
+        if self._dash_ticks % 10 == 0 and not self._busy:
+            try:
+                if self._pages["dash"][0].winfo_ismapped():
+                    self._refresh_top()
+            except Exception:  # noqa: BLE001
+                pass
         self.after(2000, self._tick_dashboard)
 
     def _light(self):
         self.dash_msg.configure(text="")
+
+        def done(msgs):
+            # v2.7.0: this used to pass the text as a POSITIONAL arg to
+            # configure() — CustomTkinter reads that as `require_redraw`
+            # and silently sets nothing, so Light clean NEVER showed its
+            # result and looked dead. Always use text=.
+            if isinstance(msgs, Exception):
+                self.dash_msg.configure(text=f"Error: {msgs}")
+            else:
+                self.dash_msg.configure(
+                    text="Light clean done: " + " | ".join(msgs))
+
         self._run_bg([self.light_btn],
                      lambda: memory_cleaner.light_clean(),
-                     done=lambda msgs: self.dash_msg.configure(
-                         "Light clean done: " + " | ".join(msgs)
-                         if not isinstance(msgs, Exception) else f"Error: {msgs}"),
+                     done=done,
                      status="Cleaning RAM cache...")
 
     def _emergency(self):
@@ -1024,6 +1181,42 @@ class App(ctk.CTk):
             action_log.log("freeram_emergency", {"killed": killed})
         else:
             self.dash_msg.configure(text="Nothing was closed.")
+
+    # ------------------------- Top 10 processes (v2.7.0) -------------------------
+    def _refresh_top(self):
+        """Fill the Overview Top-10 boxes (RAM + CPU) in one bg task."""
+        def work():
+            return process_manager.list_processes(sort_by="memory",
+                                                  limit=150)
+
+        def done(rows):
+            if isinstance(rows, Exception):
+                self._set_top_text(f"Error: {rows}", f"Error: {rows}")
+                return
+            by_ram = rows[:10]
+            by_cpu = sorted(rows, key=lambda r: r["cpu"],
+                            reverse=True)[:10]
+            ram_txt = "\n".join(
+                f"{i}. {r['name']} - {_fmt_size(r['rss'])} (PID {r['pid']})"
+                for i, r in enumerate(by_ram, 1)) or "No processes."
+            cpu_txt = "\n".join(
+                f"{i}. {r['name']} - {r['cpu']:.1f}% (PID {r['pid']})"
+                for i, r in enumerate(by_cpu, 1)) or "No processes."
+            self._set_top_text(ram_txt, cpu_txt)
+
+        self._run_bg([self.top_refresh_btn], work, done=done,
+                     status="Loading top processes...")
+
+    def _set_top_text(self, ram_txt, cpu_txt):
+        for box, txt in ((self.top_ram_box, ram_txt),
+                         (self.top_cpu_box, cpu_txt)):
+            try:
+                box.configure(state="normal")
+                box.delete("1.0", "end")
+                box.insert("1.0", txt)
+                box.configure(state="disabled")
+            except Exception:  # noqa: BLE001
+                pass
 
     # ------------------------- Health Score + Optimize (v2.4) -------------------------
     def _refresh_health(self):
@@ -1052,7 +1245,7 @@ class App(ctk.CTk):
                 text=" | ".join(data["suggestions"]))
 
         self._run_bg([self.health_refresh_btn], work, done=done,
-                     status="Calculating Health Score...")
+                     status="Calculating Health Score...", timeout=600)
 
     def _optimize(self):
         self.opt_msg.configure(text="")
@@ -1060,7 +1253,7 @@ class App(ctk.CTk):
 
         def progress(done_n, total, label):
             try:
-                self.after(0, lambda: self.opt_prog.set(
+                _post_ui(self, lambda: self.opt_prog.set(
                     done_n / total if total else 0))
             except Exception:  # noqa: BLE001
                 pass
@@ -1081,7 +1274,7 @@ class App(ctk.CTk):
                 self._refresh_quarantine()
 
         self._run_bg([self.optimize_btn], work, done=done,
-                     status="Optimizing...")
+                     status="Optimizing...", timeout=900)
 
     # ------------------------- Processes page -------------------------
     def _build_processes(self, page):
@@ -1138,7 +1331,9 @@ class App(ctk.CTk):
             return
         self._proc_rows = rows
         self._fill_proc()
-        self.p_msg.configure(text="")
+        # v2.7.0: do NOT clear p_msg here — the kill flow sets its result
+        # message right after refreshing, and clearing it here erased the
+        # only feedback the user ever saw ("kill doesn't work").
         self.p_count.configure(text=f"{len(rows)} processes")
 
     def _sort_proc(self, key):
@@ -1190,18 +1385,34 @@ class App(ctk.CTk):
             targets.append((pid, name))
 
         def work():
-            n = 0
-            for pid, _name in targets:
-                ok, _ = process_manager.kill_process(pid, force=force)
-                n += ok
-            return n
+            killed, failed = 0, []
+            for pid, pname in targets:
+                ok, msg = process_manager.kill_process(pid, force=force)
+                if ok:
+                    killed += 1
+                else:
+                    failed.append((pname, msg))
+            return {"killed": killed, "failed": failed}
 
-        def done(n):
-            if isinstance(n, Exception):
-                self.p_msg.configure(text=f"Error: {n}")
+        def done(res):
+            if isinstance(res, Exception):
+                self.p_msg.configure(text=f"Error: {res}")
                 return
-            action_log.log("kill_gui", {"force": force, "killed": n})
+            n = res["killed"]
+            failed = res["failed"]
+            action_log.log("kill_gui", {"force": force, "killed": n,
+                                        "failed": len(failed)})
             msg = f"Closed {n}/{len(targets)} process(es)."
+            if failed:
+                # v2.7.0: say WHICH apps could not be closed and why —
+                # "kill doesn't work" was undebuggable without this.
+                detail = "; ".join(f"{nm}: {m}" for nm, m in failed[:3])
+                msg += f" Could not close — {detail}."
+                if any("access" in m.lower() or "denied" in m.lower()
+                       for _nm, m in failed):
+                    msg += (" Tip: apps running as Administrator cannot "
+                            "be closed by a normal session — relaunch "
+                            "CleanBoost via run_cleanboost_admin.bat.")
             # v2.5.2: a killed app with a startup entry comes back on
             # next boot — tell the user instead of letting it silently
             # "restart the old app".
@@ -1220,8 +1431,10 @@ class App(ctk.CTk):
                                       "after restart — disable in the Startup tab.")
                 except Exception:  # noqa: BLE001
                     pass
-            self.p_msg.configure(text=msg)
+            # v2.7.0: refresh FIRST (it clears p_msg when it starts),
+            # then set the result message so it actually stays visible.
             self._refresh_proc()
+            self.p_msg.configure(text=msg)
 
         self._run_bg([self.p_kill_btn, self.p_fkill_btn], work, done=done,
                      status="Closing processes...")
@@ -1312,7 +1525,7 @@ class App(ctk.CTk):
             self._show_scan(results)
 
         self._run_bg([self.c_scan_btn, self.c_del_btn, self.c_q_btn],
-                     work, done=done, status="Scanning...")
+                     work, done=done, status="Scanning...", timeout=900)
 
     def _show_scan(self, results):
         if isinstance(results, Exception):
@@ -1408,7 +1621,7 @@ class App(ctk.CTk):
             self._after_clean(summary)
 
         self._run_bg([self.c_scan_btn, self.c_del_btn, self.c_q_btn],
-                     work, done=done, status="Cleaning...")
+                     work, done=done, status="Cleaning...", timeout=1900)
 
     def _after_clean(self, summary):
         if isinstance(summary, Exception):
@@ -1548,7 +1761,7 @@ class App(ctk.CTk):
                 ok, msg = Q.restore(iid)
                 msgs.append(("OK " if ok else "! ") + msg)
                 action_log.log("quarantine_restore", {"id": iid, "ok": ok})
-                self.after(0, lambda f=(idx + 1) / len(sel): self._q_prog_set(f))
+                _post_ui(self, lambda f=(idx + 1) / len(sel): self._q_prog_set(f))
             return msgs
 
         def done(msgs):
@@ -1560,7 +1773,7 @@ class App(ctk.CTk):
             self._refresh_quarantine()
 
         self._q_prog_set(0)
-        self._run_bg(self._q_buttons, work, done=done, status="Restoring...")
+        self._run_bg(self._q_buttons, work, done=done, status="Restoring...", timeout=900)
 
     def _q_delete(self):
         from tkinter import messagebox
@@ -1582,7 +1795,7 @@ class App(ctk.CTk):
                     deleted += 1
                 else:
                     failed.append(f"{iid}: {msg}")
-                self.after(0, lambda f=(idx + 1) / len(sel): self._q_prog_set(f))
+                _post_ui(self, lambda f=(idx + 1) / len(sel): self._q_prog_set(f))
             return deleted, failed
 
         def done(res):
@@ -1607,7 +1820,7 @@ class App(ctk.CTk):
 
         self._q_prog_set(0)
         self._run_bg(self._q_buttons, work, done=done,
-                     status="Deleting permanently...")
+                     status="Deleting permanently...", timeout=900)
 
     def _q_purge(self):
         from tkinter import messagebox
@@ -1632,7 +1845,7 @@ class App(ctk.CTk):
 
         self._q_prog_start_indeterminate()
         self._run_bg(self._q_buttons, work, done=done,
-                     status="Cleaning expired items...")
+                     status="Cleaning expired items...", timeout=900)
 
     def _q_destroy_prompt(self):
         items = Q.list_items()
@@ -1673,7 +1886,7 @@ class App(ctk.CTk):
     def _run_destroy_all(self):
         def work():
             def progress(done_n, total):
-                self.after(0, lambda: self._q_prog_set(
+                _post_ui(self, lambda: self._q_prog_set(
                     done_n / total if total else 1))
             ok, msg, summary = Q.delete_all(progress_cb=progress)
             action_log.log("quarantine_destroy_all",
@@ -1705,7 +1918,7 @@ class App(ctk.CTk):
 
         self._q_prog_set(0)
         self._run_bg(self._q_buttons, work, done=done,
-                     status="Destroying all quarantined items...")
+                     status="Destroying all quarantined items...", timeout=900)
 
 
     # ------------------------- Network page (v2.4) -------------------------
@@ -2126,7 +2339,7 @@ class App(ctk.CTk):
                 self.net_speed_msg.configure(text=msg)
 
         self._run_bg([self.net_speed_btn], work, done=done,
-                     status="Running speed test...")
+                     status="Running speed test...", timeout=300)
 
     def _reset_speed(self):
         self._net_before = None
@@ -2141,9 +2354,9 @@ class App(ctk.CTk):
 
         def progress(i, total, label):
             try:
-                self.after(0, lambda: self.net_refresh_prog.set(
+                _post_ui(self, lambda: self.net_refresh_prog.set(
                     i / total if total else 0))
-                self.after(0, lambda: self.net_refresh_msg.configure(
+                _post_ui(self, lambda: self.net_refresh_msg.configure(
                     text=f"Step: {label}..."))
             except Exception:  # noqa: BLE001
                 pass
@@ -2166,7 +2379,7 @@ class App(ctk.CTk):
                 text_color=C_GRN if ok else C_RED)
 
         self._run_bg([self.net_refresh_btn], work, done=done,
-                     status="Refreshing network...")
+                     status="Refreshing network...", timeout=300)
 
     def _flush_network(self):
         """Flush Network button: clear stale caches, keep the IP."""
@@ -2175,9 +2388,9 @@ class App(ctk.CTk):
 
         def progress(i, total, label):
             try:
-                self.after(0, lambda: self.flush_prog.set(
+                _post_ui(self, lambda: self.flush_prog.set(
                     i / total if total else 0))
-                self.after(0, lambda: self.flush_msg.configure(
+                _post_ui(self, lambda: self.flush_msg.configure(
                     text=f"Step: {label}..."))
             except Exception:  # noqa: BLE001
                 pass
@@ -2203,7 +2416,7 @@ class App(ctk.CTk):
                 text_color=C_GRN if ok else C_RED)
 
         self._run_bg([self.flush_btn], work, done=done,
-                     status="Flushing network caches...")
+                     status="Flushing network caches...", timeout=300)
 
     # ------------------------- Network v2.5 handlers -------------------------
     def _dns_buttons(self):
@@ -2462,7 +2675,7 @@ class App(ctk.CTk):
 
         def progress(i, total, label):
             try:
-                self.after(0, lambda: self.reset_msg.configure(
+                _post_ui(self, lambda: self.reset_msg.configure(
                     text=f"Adapter Reset: {label}..."))
             except Exception:  # noqa: BLE001
                 pass
@@ -2484,7 +2697,7 @@ class App(ctk.CTk):
             self._refresh_net_info()
 
         self._run_bg([self.adapter_reset_btn], work, done=done,
-                     status="Resetting adapter...")
+                     status="Resetting adapter...", timeout=300)
 
     def _deep_reset_prompt(self):
         dlg = ctk.CTkToplevel(self)

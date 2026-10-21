@@ -30,7 +30,14 @@ def trim_working_sets():
     PROCESS_QUERY_INFORMATION = 0x0400
     PROCESS_SET_QUOTA = 0x0100
     done = 0
-    for pid in psutil.pids():
+    # v2.7.0: hard time budget — one wedged OpenProcess target must not
+    # stall the whole clean (and with it the UI's busy lock) for long.
+    # The background-task timeout is the outer net; this is the inner one.
+    import time
+    t0 = time.time()
+    for i, pid in enumerate(psutil.pids()):
+        if i % 32 == 0 and time.time() - t0 > 30:
+            break
         try:
             h = kernel32.OpenProcess(
                 PROCESS_QUERY_INFORMATION | PROCESS_SET_QUOTA, False, pid)

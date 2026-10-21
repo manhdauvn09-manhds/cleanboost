@@ -38,6 +38,36 @@
 <main>
 
 <div class="version">
+  <h2>v2.7.0 — Buttons that always come back + Top 10 processes</h2>
+  <div class="date">2026-10-21 — Full audit after user reports: scan shows nothing, Overview buttons die after one press, kill seems not to work. Real GUI end-to-end tests added (xvfb) and caught real bugs</div>
+
+  <div class="entry">
+    <span class="tag bug">Root cause</span><b>Worker threads no longer call Tk — the "dead button" cascade is fixed at the architecture level.</b>
+    <p class="why">Background workers used to report results via <code>after()</code> called FROM the worker thread. When the main thread is not inside the main loop at that instant, Tk raises <code>RuntimeError: main thread is not in main loop</code> inside the worker — the thread dies silently (invisible under pythonw.exe), the finish callback never runs, the busy lock stays set, and from then on EVERY feature queues forever: scans show nothing, kills never run, buttons never re-enable. Now workers only store their result + set an event; the UI thread polls it. Progress callbacks (Optimize, Flush, Quick Refresh, quarantine, dialogs) go through a thread-safe UI queue (<code>_post_ui</code>) for the same reason.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Every background task now has a hard timeout — a stuck task is abandoned and the app recovers by itself.</b>
+    <p class="why">Default limit 180s; long jobs get more (scan 900s, cleaning incl. DISM 1900s, health 600s, network repairs 300s). On timeout the lock is released, the task's buttons come back, the queue moves on, the late result is ignored, and the status bar + action log name the exact task (<code>bg_task_timeout</code>). The RAM trim also got an inner 30s budget. No single hang, in any feature, on any machine, can lock the app again.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>"Light clean" result was never displayed — and the kill result message was erased the instant it appeared.</b>
+    <p class="why">Light clean passed its message as a positional argument to <code>configure()</code>, which CustomTkinter silently treats as a redraw flag — the result never showed. After a kill, the code set the "Closed n/n" message and then refreshed the process list, whose first step cleared the message — so kills looked like they did nothing. Both fixed; kill results now also name each app that could not be closed and why, with an "run as Administrator" hint for Access Denied cases.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>NEW: Top 10 processes on the Overview — Top 10 by RAM and Top 10 by CPU, side by side.</b>
+    <p class="why">Each row shows app name, memory size / CPU %, and PID. Refresh button + auto-refresh every ~20s while the Overview is open. The Overview page is now scrollable so the panel fits smaller windows.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Tests</span><b>Real GUI end-to-end tests (tests/test_gui_e2e.py, run under xvfb) + kill unit tests.</b>
+    <p class="why">They drive the real app: an Overview button press must return its button, a stuck task must be abandoned at its timeout, a scan of a junk-filled HOME must find the junk, the Processes-page kill must really kill a live process (and its message must stay visible), the Top-10 panel must fill, and every page must open with the queue draining. 96 tests pass.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.6.1 — Stuck-task fix: scans can no longer run forever + the UI always shows progress</h2>
   <div class="date">2026-10-20 — User report: a button stayed disabled from morning to noon and there was no way to tell whether the task had finished</div>
 

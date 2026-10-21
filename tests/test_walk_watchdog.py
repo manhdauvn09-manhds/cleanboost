@@ -67,10 +67,17 @@ class TestWatchdog(unittest.TestCase):
         src = (Path(__file__).resolve().parent.parent
                / "ui" / "app.py").read_text(encoding="utf-8")
         # live elapsed-time status + 15-min stuck warning + task logging
-        self.assertIn("_bg_tick", src)
+        self.assertIn("_bg_poll", src)
         self.assertIn("bg_task_start", src)
         self.assertIn("bg_task_done", src)
         self.assertIn("bg_task_slow", src)
+        # hard timeout abandonment (v2.7.0)
+        self.assertIn("bg_task_timeout", src)
+        self.assertIn("_abandon_bg", src)
+        # worker threads never call Tk: results return via a polled
+        # holder + the thread-safe UI queue (v2.7.0)
+        self.assertIn("_post_ui", src)
+        self.assertIn("_drain_ui_queue", src)
         # a worker dying with BaseException must release the UI lock
         self.assertIn("BaseException", src)
 
