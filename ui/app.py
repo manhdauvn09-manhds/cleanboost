@@ -245,7 +245,7 @@ class RingGauge(tk.Canvas):
 
     def set(self, pct, subtitle=""):
         self.delete("all")
-        s, cx, cy, r = self._s, self._s / 2, self._s / 2, self._s / 2 - 20
+        cx, cy, r = self._s / 2, self._s / 2, self._s / 2 - 20
         pct = max(0, min(100, pct))
         self.create_arc(cx - r, cy - r, cx + r, cy + r, start=90, extent=359.9,
                         style="arc", outline=C_LINE, width=13)
@@ -919,7 +919,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.7.1", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.7.2", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):

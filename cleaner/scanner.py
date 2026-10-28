@@ -156,7 +156,7 @@ def _scan_special(rule: dict) -> dict:
 
 def _scan_special2(rule: dict) -> dict:
     """Special rules (levels 2/3)."""
-    from cleaner import sysclean, dism, orphan_detector
+    from cleaner import sysclean, orphan_detector
     kind = rule["special"]
     if kind == "update_cache":
         dl = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"),

@@ -17,7 +17,6 @@ days since last clean comes from the action_log "clean" entries.
 Never raises — returns (ok, message, data).
 """
 import json
-import os
 import sys
 from datetime import datetime, timezone
 

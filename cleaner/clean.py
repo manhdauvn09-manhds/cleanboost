@@ -8,7 +8,6 @@ Never raises — all errors go to summary["failed"].
 """
 import ctypes
 import os
-import shutil
 import subprocess
 import sys
 

@@ -39,8 +39,18 @@ def main() -> int:
     if current == installed:
         return 0  # nothing changed
     print("[CleanBoost] requirements.txt changed - installing dependencies...")
-    r = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-r", REQ])
+    try:
+        # v2.7.2: pip install used to run with no timeout — a stalled
+        # network could freeze the app launch forever. 5 minutes is
+        # generous for a handful of small packages.
+        r = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-r", REQ],
+            timeout=300)
+    except subprocess.TimeoutExpired:
+        print("[CleanBoost] ERROR: dependency install timed out after "
+              "5 minutes. Check your internet connection and run "
+              "setup_windows.bat.")
+        return 1
     if r.returncode != 0:
         print("[CleanBoost] ERROR: failed to install dependencies. "
               "Check your internet connection and run setup_windows.bat.")

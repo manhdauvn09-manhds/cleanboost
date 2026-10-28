@@ -38,6 +38,26 @@
 <main>
 
 <div class="version">
+  <h2>v2.7.2 — Rà soát toàn bộ + báo cáo chi tiết (bao-cao-ra-soat-toan-bo.html)</h2>
+  <div class="date">2026-10-28 — User yêu cầu: "đã chạy được thật hết các tính năng khác chưa? rà lại toàn bộ và báo cáo cụ thể những cái đã, sẽ sửa"</div>
+
+  <div class="entry">
+    <span class="tag feat">Audit</span><b>Rà toàn bộ 34 handler nút bấm, 9 lệnh CLI (+7 lệnh con), tính năng nền; đối chiếu từng cái với test; quét tĩnh subprocess/ctypes/constructor giao diện.</b>
+    <p class="why">Kết luận trung thực ghi trong báo cáo: 104 test PASS nhưng các lệnh Windows-only (DISM, netsh, registry, ipconfig…) mới chỉ kiểm chứng bằng mock + review — cần user chạy thử 12 mục trên Windows thật trước khi gọi là "chạy thật 100%". Báo cáo phân loại rõ 3 mức: Chạy thật / Mock-review / Chưa có test tự động, kèm checklist kiểm chứng cho user và danh sách sẽ sửa theo ưu tiên.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>pip install khi khởi động không có timeout.</b>
+    <p class="why">check_env.py chạy <code>pip install -r requirements.txt</code> không timeout — mạng kẹt là app treo vĩnh viễn ở màn hình khởi động. Thêm timeout 300s + báo lỗi rõ ràng, có test đường timeout bằng mock.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Cleanup</span><b>pyflakes sạch 100%.</b>
+    <p class="why">Dọn biến thừa trong GaugeCanvas.set và 3 import thừa (cleaner/clean.py shutil ngoài, core/health.py os, cleaner/scanner.py dism) — đều đã kiểm chứng không có code nào dùng tới. 2 lời gọi subprocess khác không timeout được xem xét và kết luận an toàn (sync Linux + notify-send trả ngay, có try/except).</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.7.1 — The Delete confirmation dialog actually works + all popups are truly modal</h2>
   <div class="date">2026-10-28 — User report: "Delete to free space" showed a header + an EMPTY groups box and no buttons; popups must block the buttons underneath</div>
 
