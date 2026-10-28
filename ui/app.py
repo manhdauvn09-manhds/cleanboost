@@ -185,20 +185,34 @@ def _center_on(win, parent):
         pass
 
 
-def _make_modal(win, parent):
+def _make_modal(win, parent, _attempt=0):
     """Make a Toplevel a modal popup centered on the main window.
 
     The main window cannot be used until the popup is closed.
+    v2.7.1: grab_set can fail silently when the window is not viewable
+    yet (the old try/except swallowed it, leaving the main window
+    clickable behind the popup). Verify the grab actually held and
+    retry briefly if it did not.
     """
-    try:
-        win.transient(parent)
-    except Exception:  # noqa: BLE001
-        pass
-    _center_on(win, parent)
+    if _attempt == 0:
+        try:
+            win.transient(parent)
+        except Exception:  # noqa: BLE001
+            pass
+        _center_on(win, parent)
     try:
         win.grab_set()
     except Exception:  # noqa: BLE001
         pass
+    try:
+        grabbed = win.grab_status() is not None
+    except Exception:  # noqa: BLE001
+        grabbed = False
+    if not grabbed and _attempt < 10:
+        try:
+            win.after(100, lambda: _make_modal(win, parent, _attempt + 1))
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _dark_tree(parent):
@@ -348,7 +362,10 @@ class ConfirmCleanDialog(ctk.CTkToplevel):
         box = ctk.CTkScrollableFrame(self, label_text="Groups to clean")
         box.pack(fill="both", expand=True, padx=16, pady=10)
         for rule, size in items:
-            f = ctk.CTkFrame(box, fg_color=C_BTN2, text_color=C_BTN2_TXT)
+            # v2.7.1: CTkFrame has NO text_color argument — passing it
+            # raised ValueError on the FIRST row, aborting the dialog
+            # mid-build: header + empty box, no buttons, zombie window.
+            f = ctk.CTkFrame(box, fg_color=C_BTN2)
             f.pack(fill="x", padx=6, pady=4)
             top = ctk.CTkFrame(f, fg_color="transparent")
             top.pack(fill="x", padx=10, pady=(8, 0))
@@ -417,7 +434,8 @@ class HighRiskConfirmDialog(ctk.CTkToplevel):
         box = ctk.CTkScrollableFrame(self, label_text="High-risk groups")
         box.pack(fill="both", expand=True, padx=16, pady=6)
         for rule in high_rules:
-            f = ctk.CTkFrame(box, fg_color=C_BTN2, text_color=C_BTN2_TXT)
+            # v2.7.1: same CTkFrame text_color bug as ConfirmCleanDialog.
+            f = ctk.CTkFrame(box, fg_color=C_BTN2)
             f.pack(fill="x", padx=6, pady=4)
             ctk.CTkLabel(f, text=rule["name"], font=(FONT, 13, "bold"),
                          wraplength=520, justify="left").pack(anchor="w", padx=10, pady=(8, 0))
@@ -836,6 +854,35 @@ class App(ctk.CTk):
         except Exception:  # noqa: BLE001
             pass
 
+    def report_callback_exception(self, exc, val, tb):
+        """Tkinter calls this when a button/menu callback raises (v2.7.1).
+
+        Default Tk behavior prints to stderr — invisible under
+        pythonw.exe, which is how a broken button produced a zombie
+        dialog with no error shown. Now: log it AND show it, so a
+        failing feature can never die silently again.
+        """
+        try:
+            import traceback
+            text = "".join(traceback.format_exception(exc, val, tb))
+            action_log.log("ui_callback_error",
+                           {"exc": f"{exc.__name__}: {val}"})
+            try:
+                from gui import _crash_log_path
+                with open(_crash_log_path(), "a", encoding="utf-8") as f:
+                    f.write(text + "\n")
+            except Exception:  # noqa: BLE001
+                pass
+            from tkinter import messagebox
+            messagebox.showerror(
+                "Unexpected error",
+                f"{exc.__name__}: {val}\n\n"
+                "The action did not complete. Details were written to "
+                "the error log (see the status bar for its location).",
+                parent=self)
+        except Exception:  # noqa: BLE001
+            pass
+
     # ------------------------- shell -------------------------
     def _build_sidebar(self):
         sb = ctk.CTkFrame(self, fg_color=C_SIDEBAR, corner_radius=0, width=210)
@@ -872,7 +919,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.7.0", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.7.1", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
@@ -1591,7 +1638,16 @@ class App(ctk.CTk):
             messagebox.showwarning("Nothing selected",
                                    "Tick at least one group first.", parent=self)
             return
-        dlg = ConfirmCleanDialog(self, items, permanent)
+        dlg = None
+        try:
+            dlg = ConfirmCleanDialog(self, items, permanent)
+        except Exception as e:  # noqa: BLE001
+            # v2.7.1: a dialog that fails mid-build must never be left
+            # on screen as a button-less zombie.
+            messagebox.showerror("Dialog error",
+                                 f"Could not open the confirmation dialog: {e}",
+                                 parent=self)
+            return
         self.wait_window(dlg)
         if not dlg.result:
             return
@@ -1600,7 +1656,13 @@ class App(ctk.CTk):
         # typing "yes" for high-risk rules).
         high = [rule for rule, _ in items if rule.get("risk") == "high"]
         if high:
-            dlg2 = HighRiskConfirmDialog(self, high)
+            try:
+                dlg2 = HighRiskConfirmDialog(self, high)
+            except Exception as e:  # noqa: BLE001
+                messagebox.showerror("Dialog error",
+                                     f"Could not open the high-risk dialog: {e}",
+                                     parent=self)
+                return
             self.wait_window(dlg2)
             if not dlg2.result:
                 return

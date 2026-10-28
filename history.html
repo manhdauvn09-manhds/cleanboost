@@ -38,6 +38,31 @@
 <main>
 
 <div class="version">
+  <h2>v2.7.1 — The Delete confirmation dialog actually works + all popups are truly modal</h2>
+  <div class="date">2026-10-28 — User report: "Delete to free space" showed a header + an EMPTY groups box and no buttons; popups must block the buttons underneath</div>
+
+  <div class="entry">
+    <span class="tag bug">Root cause</span><b>CTkFrame does not accept text_color — the confirmation dialog crashed on its first group row.</b>
+    <p class="why">Both ConfirmCleanDialog and HighRiskConfirmDialog built each group card as <code>CTkFrame(..., text_color=...)</code>. CustomTkinter rejects that argument with ValueError, aborting the dialog constructor mid-build: the header and total were already packed, but no group rows, no note and no Cancel/Delete buttons ever got created — leaving a button-less zombie window the user could only close with the X. The same invalid argument was the only widget-kwarg violation in the whole app (verified by an AST scan of every CTk constructor call). Removed from both dialogs; a static test now forbids it forever.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Modality is now verified, not assumed — a popup really blocks the window behind it.</b>
+    <p class="why"><code>_make_modal</code> used to call <code>grab_set()</code> inside a try/except that swallowed failures (a grab on a not-yet-viewable window fails silently), so the main window could stay clickable behind a popup. It now checks <code>grab_status()</code> and retries for up to a second until the grab holds. All six popup classes are tested for a held grab.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>A button can never fail silently again.</b>
+    <p class="why">Tkinter's default is to print callback exceptions to stderr — invisible under pythonw.exe, which is how the zombie dialog sat there with no error shown. The app now overrides <code>report_callback_exception</code>: every callback error is logged to the action log + error log AND shown in an error dialog. Dialog construction in the clean flow is also guarded so a future build failure shows an error instead of a zombie window.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Tests</span><b>Dialog tests (tests/test_dialogs.py): every popup class is constructed with realistic data.</b>
+    <p class="why">They assert the Delete confirmation lists all groups with sizes, shows Cancel/Delete buttons, holds the grab, and its Cancel/Confirm paths set the result and close; same for the high-risk dialog (checkbox-gated Run starts disabled), result dialog, file-details dialog, emergency dialog and help window. 104 tests pass.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.7.0 — Buttons that always come back + Top 10 processes</h2>
   <div class="date">2026-10-21 — Full audit after user reports: scan shows nothing, Overview buttons die after one press, kill seems not to work. Real GUI end-to-end tests added (xvfb) and caught real bugs</div>
 
