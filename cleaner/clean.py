@@ -19,6 +19,20 @@ from core import privilege
 from safety import protected
 
 
+def _shell32():
+    """shell32 with declared signatures (v2.8.0 hardening).
+
+    Without argtypes, ctypes passes Python ints as 32-bit C ints —
+    HWND/pointer args are 64-bit on Windows 64-bit, so an undeclared
+    call can silently truncate a handle. Declaring costs nothing.
+    """
+    lib = ctypes.WinDLL("shell32", use_last_error=True)
+    lib.SHEmptyRecycleBinW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
+                                       ctypes.c_uint]
+    lib.SHEmptyRecycleBinW.restype = ctypes.c_long  # HRESULT
+    return lib
+
+
 def _clean_special(rule: dict, res: dict = None, permanent: bool = False):
     """Handle special rules.
 
@@ -42,7 +56,7 @@ def _clean_special(rule: dict, res: dict = None, permanent: bool = False):
     if kind == "recycle_bin" and sys.platform == "win32":
         try:
             SHERB = 0x1 | 0x2 | 0x4  # NOCONFIRMATION | NOPROGRESSUI | NOSOUND
-            rc = ctypes.WinDLL("shell32").SHEmptyRecycleBinW(None, None, SHERB)
+            rc = _shell32().SHEmptyRecycleBinW(None, None, SHERB)
             if rc == 0:
                 return True, "Recycle Bin emptied.", 0, {"deleted": 0}
             return False, "Could not empty Recycle Bin.", 0, {}

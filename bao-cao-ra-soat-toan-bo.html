@@ -34,7 +34,7 @@
   <li><span class="badge b-mock">MOCK / REVIEW</span> — Lệnh chỉ tồn tại trên Windows (DISM, netsh, registry, ipconfig…) nên trên máy kiểm thử Linux nó được chạy với lệnh giả lập (mock) + đọc kỹ code. Logic đúng, nhưng <b>chưa từng chạy trên Windows thật</b> — đây là phần cần anh kiểm chứng.</li>
   <li><span class="badge b-no">CHƯA CÓ TEST TỰ ĐỘNG</span> — Tính năng nhỏ, logic đơn giản, chỉ được rà bằng mắt. Không có nghĩa là hỏng, mà là chưa có bằng chứng tự động.</li>
 </ul>
-<p><b>Kết quả tổng:</b> 104 test tự động PASS (unit + GUI thật), pyflakes sạch, CLI chạy thật 4 lệnh chỉ đọc. <b>Không còn tính năng nào “bấm mà chết im” được biết tới</b> sau v2.7.1 — mọi lỗi nút bấm giờ đều hiện hộp báo lỗi thay vì im lặng. Nhưng <b>12 mục Windows-only ở §5 vẫn đang chờ anh chạy thử trên máy thật</b> trước khi được gọi là “chạy thật 100%”.</p>
+<p><b>Kết quả tổng (cập nhật v2.8.0):</b> 125 test tự động PASS (unit + GUI thật), pyflakes sạch, CLI chạy thật 4 lệnh chỉ đọc. <b>Không còn tính năng nào “bấm mà chết im” được biết tới</b> sau v2.7.1 — mọi lỗi nút bấm giờ đều hiện hộp báo lỗi thay vì im lặng, và task xếp hàng giờ hiện rõ "Queued: …" ở status bar. Ưu tiên 2 (test GUI + ctypes) đã làm xong trong v2.8.0. Nhưng <b>12 mục Windows-only ở §5 vẫn đang chờ anh chạy thử trên máy thật</b> trước khi được gọi là “chạy thật 100%”.</p>
 </div>
 
 <div class="box grey">
@@ -155,11 +155,21 @@
 <tr><td>v2.6.1</td><td>Scan ổ cứng chạy từ sáng không xong, nút chết cả ngày → os.walk đi theo junction Windows gây quét vòng lặp; thêm safe_walk + đồng hồ trạng thái + cảnh báo task kẹt 15 phút</td></tr>
 <tr><td>v2.7.0</td><td>Scan trắng + nút bấm 1 lần chết + kill không chạy → <b>worker thread gọi Tk after() làm thread chết im lặng, khóa nút kẹt vĩnh viễn</b> (bắt được nhờ test GUI thật dưới Xvfb, không phải đoán); sửa kiến trúc: worker chỉ ghi kết quả, UI thread tự lấy; thêm timeout cứng từng task; sửa lỗi configure() truyền text dạng positional; sửa kill bị xóa thông báo ngay khi hiện</td></tr>
 <tr><td>v2.7.1</td><td><b>Nút Delete chỉ hiện popup rỗng, không bấm được gì</b> → CTkFrame không có tham số text_color, dialog chết giữa chừng thành cửa sổ zombie; sửa cả 2 dialog; popup giờ khóa thật cửa sổ dưới (kiểm chứng grab + thử lại 1s); lỗi nút bấm giờ hiện hộp báo thay vì chết im</td></tr>
+<tr><td>v2.8.0 (mới, 28/10)</td><td><b>Force kill OneDrive + status đang chạy + popup nêu tên + toàn bộ ưu tiên 2.</b> Kill giờ được kiểm chứng thật sau khi kill (gone / respawned / alive); app tự khởi động lại được báo rõ kèm cách dừng hẳn; popup Force kill hiện tên app dễ hiểu + exe + PID + RAM; task xếp hàng hiện "Queued: …" ở status bar; status mọi task nêu tên cụ thể; sửa lỗi thông báo hogs/startup bị refresh xóa; ctypes đủ 5 chỗ khai báo chữ ký; 125 test PASS (thêm 21 test GUI ưu tiên 2).</td></tr>
 <tr><td>v2.7.2 (mới, trong đợt rà này)</td><td>Quét tĩnh phát hiện: (1) <code>pip install</code> khi khởi động không có timeout — mạng kẹt là app treo vĩnh viễn → thêm timeout 5 phút + báo lỗi rõ; (2) 4 cảnh báo pyflakes (biến thừa, import thừa) → dọn sạch, pyflakes giờ sạch 100%; (3) 2 lời gọi subprocess khác không timeout được xem xét và kết luận an toàn (lệnh <code>sync</code> Linux trả ngay, <code>notify-send</code> trả ngay, đều có try/except)</td></tr>
 </table>
 <p class="small">Bằng chứng chung: sau mỗi phiên bản đều commit + push + đối chiếu remote HEAD. Toàn bộ test hiện tại: <b>104 PASS</b>.</p>
 
 <h2>5. SẼ SỬA — những gì còn lại, theo thứ tự ưu tiên</h2>
+
+<div class="box green">
+<h3 style="margin-top:0">✅ Ưu tiên 2 — ĐÃ LÀM XONG trong v2.8.0 (28/10/2026)</h3>
+<ul>
+<li>Test GUI thật cho các nút chưa có test GUI: thao tác Quarantine (restore/delete/purge/select-all với file thật), đổi DNS + Undo + Auto + Measure, bật/tắt Startup (kèm chặn mục protected), Diagnostics, Bandwidth Hogs + End hog, hộp thoại Adapter Reset (Cancel không reset), Deep Reset (checkbox khóa nút Run), chuyển theme. Tổng test: 104 → <b>125 PASS</b>.</li>
+<li>Hardening ctypes: NtSetSystemInformation, SHEmptyRecycleBinW, SHQueryRecycleBinW, IsUserAnAdmin đã có argtypes/restype theo đúng tài liệu API Windows, kèm test AST bắt buộc. <b>Vẫn cần 1 lần chạy thật trên Windows để chốt</b> (làm theo lệnh trực tiếp của user ngày 28/10).</li>
+<li>Trong lúc làm ưu tiên 2 còn bắt thêm 2 lỗi cùng họ với lỗi kill v2.7.0: thông báo "Closed 1/1" của Hogs và "Disabled OneDrive" của Startup bị chính lần refresh sau đó xóa mất — đã sửa bằng cơ chế pending message.</li>
+</ul>
+</div>
 
 <div class="box yellow">
 <h3 style="margin-top:0">Ưu tiên 1 — Cần anh kiểm chứng trên Windows thật (không ai khác làm thay được)</h3>
@@ -181,11 +191,6 @@
 </div>
 
 <div class="box grey">
-<h3 style="margin-top:0">Ưu tiên 2 — Sẽ bổ sung test tự động (Muse làm, không cần anh)</h3>
-<ul>
-<li>Test GUI thật cho các nút chưa có test GUI: thao tác Quarantine (restore/delete/purge), đổi DNS + Undo, bật/tắt Startup, hộp thoại Adapter/Deep Reset, Diagnostics, Bandwidth Hogs, chuyển theme, Select all. Mục tiêu: từ 20/34 handler có test GUI lên toàn bộ nút chính.</li>
-<li>Hardening ctypes cho lệnh Windows-only (ntdll NtSetSystemInformation, shell32 SHEmptyRecycleBinW): khai báo argtypes/restype cho đúng chuẩn 64-bit. <b>Chỉ làm sau khi anh xác nhận các lệnh đó đang chạy tốt trên Windows</b> — sửa mù code Windows mà không test được là rủi ro, nên để sau bước kiểm chứng ở trên.</li>
-</ul>
 <h3 style="margin-top:0">Ưu tiên 3 — Chưa làm, theo lộ trình v3.0 (khi anh ra lệnh)</h3>
 <ul>
 <li>Auto Guard (canh tự động), Duplicate Finder (tìm file trùng), Profiles (cấu hình dọn theo hồ sơ), lịch sử SQLite, tray/toast. Đây là tính năng mới, không phải sửa lỗi.</li>

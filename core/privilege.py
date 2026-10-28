@@ -8,7 +8,9 @@ def is_admin() -> bool:
     """True when running as Admin (Windows) or root (Linux)."""
     try:
         if sys.platform == "win32":
-            return bool(ctypes.windll.shell32.IsUserAnAdmin())
+            shell32 = ctypes.windll.shell32
+            shell32.IsUserAnAdmin.restype = ctypes.c_bool  # v2.8.0
+            return bool(shell32.IsUserAnAdmin())
         return os.geteuid() == 0
     except Exception:
         return False

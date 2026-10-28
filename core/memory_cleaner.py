@@ -62,7 +62,15 @@ def purge_standby_list():
     if sys.platform != "win32":
         return False, "Windows only."
     try:
-        ntdll = ctypes.WinDLL("ntdll")
+        ntdll = ctypes.WinDLL("ntdll", use_last_error=True)
+        # v2.8.0: declare the signature. Without argtypes ctypes
+        # passes ints as 32-bit C ints; the PVOID + ULONG args are
+        # fine that way in practice, but an undeclared foreign call
+        # is a silent-truncation bug waiting for a 64-bit edge case.
+        ntdll.NtSetSystemInformation.argtypes = [ctypes.c_int,
+                                                 ctypes.c_void_p,
+                                                 ctypes.c_ulong]
+        ntdll.NtSetSystemInformation.restype = ctypes.c_long  # NTSTATUS
         MEMORY_PURGE_STANDBY_LIST = 4
         cmd = ctypes.c_int(MEMORY_PURGE_STANDBY_LIST)
         status = ntdll.NtSetSystemInformation(80, ctypes.byref(cmd),

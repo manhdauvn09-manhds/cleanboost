@@ -107,6 +107,14 @@ def _dir_size(path: str):
     return total, count
 
 
+def _shell32():
+    """shell32 with declared SHQueryRecycleBinW (v2.8.0 hardening)."""
+    lib = ctypes.WinDLL("shell32", use_last_error=True)
+    lib.SHQueryRecycleBinW.argtypes = [ctypes.c_wchar_p, ctypes.c_void_p]
+    lib.SHQueryRecycleBinW.restype = ctypes.c_long  # HRESULT
+    return lib
+
+
 def _scan_special(rule: dict) -> dict:
     kind = rule["special"]
     if kind in ("update_cache", "dism_cleanup", "dism_resetbase",
@@ -121,8 +129,8 @@ def _scan_special(rule: dict) -> dict:
                             ("i64NumItems", ctypes.c_longlong)]
             info = _INFO()
             info.cbSize = ctypes.sizeof(_INFO)
-            ok = ctypes.WinDLL("shell32").SHQueryRecycleBinW(None,
-                                                             ctypes.byref(info))
+            ok = _shell32().SHQueryRecycleBinW(None,
+                                               ctypes.byref(info))
             if ok == 0:
                 return {"rule": rule, "size": info.i64Size,
                         "count": info.i64NumItems, "samples": []}

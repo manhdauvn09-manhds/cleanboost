@@ -38,6 +38,36 @@
 <main>
 
 <div class="version">
+  <h2>v2.8.0 — Force kill OneDrive: verify, respawn detection, friendly names, queued status + priority 2 done</h2>
+  <div class="date">2026-10-28 — User report (chạy bản cũ): tab Process chọn OneDrive không Force kill được, nút tịt luôn; yêu cầu: lúc nào đang chạy cũng hiển thị status đang chạy cái gì; popup Force kill phải hiện tên process + tên app dễ hiểu; làm luôn các ưu tiên còn lại</div>
+
+  <div class="entry">
+    <span class="tag bug">Root cause</span><b>Kill không được kiểm chứng + app tự khởi động lại bị báo nhầm là "Closed 1/1".</b>
+    <p class="why">Luồng kill cũ tin tưởng kết quả của lệnh kill mà không kiểm tra lại. OneDrive (và nhiều app có watchdog) tự khởi động lại ngay sau khi bị kill, nên user thấy app vẫn còn trong danh sách và kết luận nút bị hỏng. Giờ sau mỗi lần kill, app kiểm chứng thật (process_manager.verify_process_gone): PID còn không? Có process cùng tên nào MỚI XUẤT HIỆN sau lúc kill không (so bằng tập PID chụp trước khi kill — không so create_time vì đồng hồ psutil có thể lệch)? Kết quả phân loại rõ: đã đóng / tự khởi động lại (kèm PID mới + cách dừng hẳn: tắt trong tab Startup, riêng OneDrive thì unlink trong OneDrive Settings) / vẫn còn chạy. Bonus: zombie (process chết nhưng chưa được reap) được tính là đã chết — pid_exists() nói dối với zombie.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Nút "tịt" khi task đang xếp hàng: giờ status bar nói rõ.</b>
+    <p class="why">Trước đây bấm nút trong lúc 1 task khác đang chạy thì task mới chỉ lặng lẽ xếp hàng, nút thì disabled — nhìn y hệt nút chết. Giờ status bar luôn hiển thị "Queued: &lt;tên task&gt; — waiting for the current task" và dòng tick mỗi giây cũng liệt kê hàng đợi ("Running task - 00:03 | Queued: ..."). Ngoài ra: bấm kill khi chưa chọn dòng nào giờ báo cả ở status bar (trước đây chỉ có chữ xám nhỏ dễ bỏ sót); sau khi kill + refresh, các dòng tự khởi động lại / vẫn còn chạy được chọn lại theo đúng PID để bấm lại chỉ cần 1 click.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">UX</span><b>Popup Force kill nêu tên từng app + status bar nêu tên task đang chạy.</b>
+    <p class="why">ForceKillDialog mới: tên app dễ hiểu in đậm (OneDrive, Google Chrome, Visual Studio Code… — bảng map + fallback thông minh), kèm exe name, PID, RAM; app nhạy cảm có dòng cảnh báo riêng. Status bar không còn chung chung: "Force killing OneDrive…", "Scanning (Standard)…", "Cleaning 5 group(s)…", "Changing DNS to Cloudflare (1.1.1.1)…", "Restoring 2 item(s)…", v.v. — mọi _run_bg đều có label riêng nói đang chạy cái gì.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Thông báo kết quả bị refresh xóa mất (hogs, startup) — cùng họ với lỗi kill v2.7.0.</b>
+    <p class="why">Test GUI ưu tiên 2 bắt được: sau khi End hog, "Closed 1/1" bị _find_hogs() ghi đè ngay bằng "Measuring (3s)…"; sau khi Disable startup, "Disabled OneDrive" bị _refresh_startup() ghi đè bằng "Loading…" rồi "2 entries". Sửa bằng cơ chế "pending message": kết quả được giữ lại và refresh tự gắn vào cuối thông báo của nó.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Tests + hardening</span><b>Ưu tiên 2 trong báo cáo rà soát đã làm xong.</b>
+    <p class="why">Thêm 21 test (tổng 125 PASS): GUI thật cho Quarantine (file thật: restore/delete/purge/select-all), DNS (preset/undo/auto/measure, mock lệnh Windows), Startup (refresh/disable/bảo vệ mục protected), Diagnostics, Hogs (+ End hog), hộp thoại Adapter Reset (Cancel không reset), Deep Reset (checkbox khóa nút Run), chuyển theme, và test AST bắt buộc khai báo ctypes. Hardening ctypes: NtSetSystemInformation, SHEmptyRecycleBinW, SHQueryRecycleBinW, IsUserAnAdmin giờ đều có argtypes/restype (trước đây trim_working_sets đã có, 4 chỗ còn lại chưa). Lưu ý: sửa ctypes là theo lệnh trực tiếp của user ngày 28/10; chữ ký lấy theo đúng tài liệu API Windows, nhưng vẫn cần 1 lần chạy thật trên Windows để chốt.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.7.2 — Rà soát toàn bộ + báo cáo chi tiết (bao-cao-ra-soat-toan-bo.html)</h2>
   <div class="date">2026-10-28 — User yêu cầu: "đã chạy được thật hết các tính năng khác chưa? rà lại toàn bộ và báo cáo cụ thể những cái đã, sẽ sửa"</div>
 

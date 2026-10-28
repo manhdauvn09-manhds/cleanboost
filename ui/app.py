@@ -31,6 +31,7 @@ from safety import protected  # noqa: E402
 GB = 1024 ** 3
 FONT = "Segoe UI"
 MONO = "Consolas"
+_LEVEL_NAMES = {1: "Standard", 2: "Advanced", 3: "Deep"}
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "assets")
 LOGO_PATH = os.path.join(ASSETS_DIR, "logo.png")
@@ -475,6 +476,110 @@ class HighRiskConfirmDialog(ctk.CTkToplevel):
         self.destroy()
 
 
+# Friendly app names for process exe names (v2.8.0). The old generic
+# "Force kill the selected process(es)?" popup never said WHAT was
+# about to die; the popup now shows these names big, with the exe
+# name, PID and RAM underneath, so there is no ambiguity.
+_FRIENDLY_APPS = {
+    "onedrive.exe": "OneDrive",
+    "chrome.exe": "Google Chrome",
+    "msedge.exe": "Microsoft Edge",
+    "firefox.exe": "Mozilla Firefox",
+    "code.exe": "Visual Studio Code",
+    "explorer.exe": "Windows Explorer",
+    "notepad.exe": "Notepad",
+    "spotify.exe": "Spotify",
+    "teams.exe": "Microsoft Teams",
+    "outlook.exe": "Microsoft Outlook",
+    "winword.exe": "Microsoft Word",
+    "excel.exe": "Microsoft Excel",
+    "powerpnt.exe": "PowerPoint",
+    "steam.exe": "Steam",
+    "discord.exe": "Discord",
+    "slack.exe": "Slack",
+    "zoom.exe": "Zoom",
+    "vlc.exe": "VLC media player",
+    "photoshop.exe": "Adobe Photoshop",
+    "cmd.exe": "Command Prompt",
+    "powershell.exe": "PowerShell",
+    "taskmgr.exe": "Task Manager",
+}
+
+
+def friendly_app_name(exe_name):
+    """Human-readable app name for a process exe name."""
+    n = (exe_name or "").strip()
+    key = n.lower()
+    if key in _FRIENDLY_APPS:
+        return _FRIENDLY_APPS[key]
+    base = n[:-4] if key.endswith(".exe") else n
+    if not base:
+        return n or "Unknown app"
+    if "_" in base or "-" in base:
+        return " ".join(w[:1].upper() + w[1:]
+                        for w in base.replace("-", "_").split("_") if w)
+    return base[:1].upper() + base[1:]
+
+
+class ForceKillDialog(ctk.CTkToplevel):
+    """Force-kill confirmation that NAMES its targets (v2.8.0).
+
+    targets: list of dicts {pid, name, rss, warn}. Sensitive
+    (warn) targets get an extra caution line. Modal via _make_modal.
+    """
+
+    def __init__(self, master, targets):
+        super().__init__(master)
+        self.title("Force kill")
+        self.geometry("520x460")
+        _make_modal(self, master)
+        self.result = False
+        ctk.CTkLabel(self, text="Force kill these apps?",
+                     font=(FONT, 16, "bold")).pack(padx=16, pady=(16, 4))
+        ctk.CTkLabel(
+            self,
+            text="Force kill closes apps immediately — unsaved work in "
+                 "them will be LOST.",
+            font=(FONT, 12), text_color=C_RED, wraplength=470,
+            justify="left").pack(padx=16, pady=(0, 10))
+        box = ctk.CTkScrollableFrame(self, label_text="Apps to force kill")
+        box.pack(fill="both", expand=True, padx=16, pady=6)
+        for t in targets:
+            f = ctk.CTkFrame(box, fg_color=C_BTN2)
+            f.pack(fill="x", padx=6, pady=4)
+            ctk.CTkLabel(f, text=friendly_app_name(t["name"]),
+                         font=(FONT, 13, "bold"), anchor="w",
+                         wraplength=440, justify="left").pack(
+                             anchor="w", padx=10, pady=(8, 0))
+            detail = (f"{t['name']}  •  PID {t['pid']}  •  "
+                      f"{t.get('rss', 0) / GB:.1f} GB")
+            ctk.CTkLabel(f, text=detail, font=(FONT, 11),
+                         text_color=C_MUT, anchor="w").pack(
+                             anchor="w", padx=10, pady=(0, 2))
+            if t.get("warn"):
+                ctk.CTkLabel(
+                    f, text="(!) Sensitive system process — closing it "
+                            "may briefly hide the taskbar.",
+                    font=(FONT, 11), text_color=C_YLW, anchor="w",
+                    wraplength=440, justify="left").pack(
+                        anchor="w", padx=10, pady=(0, 8))
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x", padx=16, pady=14)
+        ctk.CTkButton(row, text="Cancel", fg_color=C_BTN2,
+                      text_color=C_BTN2_TXT,
+                      command=self._no).pack(side="right", padx=6)
+        ctk.CTkButton(row, text="Force kill", fg_color="#b91c1c",
+                      text_color=C_ONCOLOR, hover_color="#991b1b",
+                      command=self._yes).pack(side="right", padx=6)
+
+    def _yes(self):
+        self.result = True
+        self.destroy()
+
+    def _no(self):
+        self.destroy()
+
+
 class ResultDialog(ctk.CTkToplevel):
     """Show cleanup results in monospace text."""
 
@@ -649,6 +754,7 @@ class App(ctk.CTk):
         self._last_scan = []
         self._scan_checks = {}
         self._proc_rows = []
+        self._proc_reselect = set()  # v2.8.0: rows to re-select after refresh
         self._net_loaded = False
         self._startup_loaded = False
         self._net_before = None
@@ -699,6 +805,12 @@ class App(ctk.CTk):
                 pass
         if self._busy:
             self._bg_queue.append(task)
+            # v2.8.0: a queued click used to show NOTHING — the button
+            # just sat disabled, which users read as "the button died".
+            # Name the queued task; the running task's tick (below)
+            # also lists the queue from now on.
+            self._set_status(
+                f"Queued: {status} — waiting for the current task")
             return True
         self._start_bg(*task)
         return True
@@ -758,7 +870,13 @@ class App(ctk.CTk):
         if sec != last_sec:
             last_sec = sec
             mm, ss = sec // 60, sec % 60
-            self._set_status(f"{status} - {mm:02d}:{ss:02d}")
+            # v2.8.0: the tick also names queued work, so the status
+            # bar always answers "what is running — and what is next".
+            queued = ""
+            if self._bg_queue:
+                queued = (" | Queued: "
+                          + "; ".join(t[3] for t in self._bg_queue))
+            self._set_status(f"{status} - {mm:02d}:{ss:02d}{queued}")
             if elapsed >= self._BG_WARN_SECONDS and not warned:
                 warned = True
                 self._set_status(
@@ -919,7 +1037,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
                      text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.7.2", font=(FONT, 10),
+        ctk.CTkLabel(sb, text="CleanBoost v2.8.0", font=(FONT, 10),
                      text_color=C_MUT).pack(pady=(0, 16))
 
     def _build_main(self):
@@ -1378,6 +1496,14 @@ class App(ctk.CTk):
             return
         self._proc_rows = rows
         self._fill_proc()
+        # v2.8.0: re-select rows the kill flow asked to keep (respawned
+        # / still-running targets, by PID) so retrying is one click.
+        want = getattr(self, "_proc_reselect", set())
+        if want:
+            self._proc_reselect = set()
+            for iid in self.p_tree.get_children():
+                if iid in want:
+                    self.p_tree.selection_add(iid)
         # v2.7.0: do NOT clear p_msg here — the kill flow sets its result
         # message right after refreshing, and clearing it here erased the
         # only feedback the user ever saw ("kill doesn't work").
@@ -1409,82 +1535,143 @@ class App(ctk.CTk):
     def _kill_selected(self, force):
         sel = self.p_tree.selection()
         if not sel:
-            self.p_msg.configure(text="No process selected.")
-            return
-        from tkinter import messagebox
-        # v2.5.2: force kill can lose unsaved work — confirm first.
-        if force and not messagebox.askyesno(
-                "Force kill",
-                "Force kill closes apps immediately — unsaved work in "
-                "them will be LOST.\n\nForce kill the selected process(es)?",
-                parent=self):
+            # v2.8.0: "No process selected." used to be a small grey
+            # label only — easy to miss, so a second click looked like
+            # a dead button. Say it in the status bar too.
+            self.p_msg.configure(text="No process selected — click a row first.")
+            self._set_status("No process selected — click a row first.")
             return
         targets = []
         for iid in sel:
             pid = int(iid)
             r = next((x for x in self._proc_rows if x["pid"] == pid), None)
-            name = r["name"] if r else f"PID {pid}"
-            if protected.check_process(name, pid) == "warn":
-                if not messagebox.askyesno("Confirm",
-                        f"{name} is a sensitive system process.\nClose it anyway?",
+            targets.append({
+                "pid": pid,
+                "name": r["name"] if r else f"PID {pid}",
+                "rss": r["rss"] if r else 0,
+                "warn": protected.check_process(
+                    r["name"] if r else f"PID {pid}", pid) == "warn",
+            })
+        # v2.8.0: force kill now confirms with a dialog that NAMES
+        # every target (friendly app name + exe + PID + RAM) instead
+        # of the old generic "process(es)?" messagebox.
+        if force:
+            dlg = ForceKillDialog(self, targets)
+            self.wait_window(dlg)
+            if not dlg.result:
+                return
+        else:
+            from tkinter import messagebox
+            keep = []
+            for t in targets:
+                if t["warn"] and not messagebox.askyesno(
+                        "Confirm",
+                        f"{friendly_app_name(t['name'])} ({t['name']}) is "
+                        "a sensitive system process.\nClose it anyway?",
                         parent=self):
                     continue
-            targets.append((pid, name))
+                keep.append(t)
+            targets = keep
+            if not targets:
+                return
 
         def work():
-            killed, failed = 0, []
-            for pid, pname in targets:
-                ok, msg = process_manager.kill_process(pid, force=force)
-                if ok:
-                    killed += 1
+            # v2.8.0: verify every kill instead of trusting it. An app
+            # that restarts itself (OneDrive) used to be reported as
+            # "Closed 1/1" while still sitting in the list — the user
+            # reasonably concluded the button was broken.
+            killed, respawned, alive, failed = [], [], [], []
+            for t in targets:
+                known = process_manager.snapshot_pids_by_name(t["name"])
+                ok, msg = process_manager.kill_process(t["pid"], force=force)
+                if not ok:
+                    failed.append((t["name"], msg))
+                    continue
+                state, new_pid = process_manager.verify_process_gone(
+                    t["pid"], t["name"], known_pids=known)
+                if state == "gone":
+                    killed.append(t["name"])
+                elif state == "respawned":
+                    respawned.append((t["name"], new_pid))
                 else:
-                    failed.append((pname, msg))
-            return {"killed": killed, "failed": failed}
+                    alive.append(t["name"])
+            return {"killed": killed, "respawned": respawned,
+                    "alive": alive, "failed": failed}
 
         def done(res):
             if isinstance(res, Exception):
                 self.p_msg.configure(text=f"Error: {res}")
                 return
-            n = res["killed"]
-            failed = res["failed"]
-            action_log.log("kill_gui", {"force": force, "killed": n,
+            killed, respawned = res["killed"], res["respawned"]
+            alive, failed = res["alive"], res["failed"]
+            action_log.log("kill_gui", {"force": force,
+                                        "killed": len(killed),
+                                        "respawned": len(respawned),
                                         "failed": len(failed)})
-            msg = f"Closed {n}/{len(targets)} process(es)."
+            parts = [f"Closed {len(killed)}/{len(targets)} process(es)."]
+            for nm, new_pid in respawned[:3]:
+                if nm.lower() == "onedrive.exe":
+                    tip = ("Disable it in the Startup tab or unlink it "
+                           "in OneDrive Settings to stop it for good.")
+                else:
+                    tip = ("Disable it in the Startup tab to stop it "
+                           "coming back.")
+                parts.append(f"⚠ {friendly_app_name(nm)} restarted itself "
+                             f"(new PID {new_pid}) — {tip}")
+            if alive:
+                parts.append("Still running: "
+                             + ", ".join(friendly_app_name(x)
+                                         for x in alive[:3])
+                             + " — try again, or run as Administrator.")
             if failed:
-                # v2.7.0: say WHICH apps could not be closed and why —
-                # "kill doesn't work" was undebuggable without this.
-                detail = "; ".join(f"{nm}: {m}" for nm, m in failed[:3])
-                msg += f" Could not close — {detail}."
+                detail = "; ".join(
+                    f"{friendly_app_name(nm)} ({nm}): {m}"
+                    for nm, m in failed[:3])
+                parts.append(f"Could not close — {detail}.")
                 if any("access" in m.lower() or "denied" in m.lower()
                        for _nm, m in failed):
-                    msg += (" Tip: apps running as Administrator cannot "
-                            "be closed by a normal session — relaunch "
-                            "CleanBoost via run_cleanboost_admin.bat.")
+                    parts.append("Tip: apps running as Administrator cannot "
+                                 "be closed by a normal session — relaunch "
+                                 "CleanBoost via run_cleanboost_admin.bat.")
             # v2.5.2: a killed app with a startup entry comes back on
             # next boot — tell the user instead of letting it silently
             # "restart the old app".
-            if sys.platform == "win32" and n:
+            if sys.platform == "win32" and killed:
                 try:
                     ok_s, _m, entries = startup_mod.list_startup()
                     if ok_s:
                         respawn = set()
-                        for _pid, pname in targets:
+                        for pname in killed:
                             for e in entries:
                                 if e["enabled"] and pname.lower() in (e["value"] or "").lower():
                                     respawn.add(e["name"])
                         if respawn:
-                            msg += (" Note: " + ", ".join(sorted(respawn))
-                                    + " start(s) with Windows and will come back "
-                                      "after restart — disable in the Startup tab.")
+                            parts.append("Note: " + ", ".join(sorted(respawn))
+                                         + " start(s) with Windows and will come back "
+                                           "after restart — disable in the Startup tab.")
                 except Exception:  # noqa: BLE001
                     pass
+            # v2.8.0: re-select respawned / still-running rows BY PID
+            # after the refresh, so retrying is one click, not a
+            # re-hunt (and unrelated same-name rows are NOT selected).
+            alive_pids = {t["pid"] for t in targets
+                          if t["name"] in set(alive)}
+            self._proc_reselect = ({str(new_pid)
+                                    for _nm, new_pid in respawned}
+                                   | {str(p) for p in alive_pids})
             # v2.7.0: refresh FIRST (it clears p_msg when it starts),
             # then set the result message so it actually stays visible.
             self._refresh_proc()
-            self.p_msg.configure(text=msg)
+            self.p_msg.configure(text=" ".join(parts))
 
+        # v2.8.0: the status bar names WHAT is being closed, not just
+        # "Closing processes...".
+        names = ", ".join(friendly_app_name(t["name"])
+                          for t in targets[:3])
+        label = (f"Force killing {names}..."
+                 if force else f"Closing {names}...")
         self._run_bg([self.p_kill_btn, self.p_fkill_btn], work, done=done,
-                     status="Closing processes...")
+                     status=label)
 
     # ------------------------- Disk Cleaner page -------------------------
     def _build_cleaner(self, page):
@@ -1572,7 +1759,9 @@ class App(ctk.CTk):
             self._show_scan(results)
 
         self._run_bg([self.c_scan_btn, self.c_del_btn, self.c_q_btn],
-                     work, done=done, status="Scanning...", timeout=900)
+                     work, done=done,
+                     status=f"Scanning ({_LEVEL_NAMES.get(level, level)})...",
+                     timeout=900)
 
     def _show_scan(self, results):
         if isinstance(results, Exception):
@@ -1683,7 +1872,9 @@ class App(ctk.CTk):
             self._after_clean(summary)
 
         self._run_bg([self.c_scan_btn, self.c_del_btn, self.c_q_btn],
-                     work, done=done, status="Cleaning...", timeout=1900)
+                     work, done=done,
+                     status=f"Cleaning {len(items)} group(s)...",
+                     timeout=1900)
 
     def _after_clean(self, summary):
         if isinstance(summary, Exception):
@@ -1835,7 +2026,8 @@ class App(ctk.CTk):
             self._refresh_quarantine()
 
         self._q_prog_set(0)
-        self._run_bg(self._q_buttons, work, done=done, status="Restoring...", timeout=900)
+        self._run_bg(self._q_buttons, work, done=done,
+                     status=f"Restoring {len(sel)} item(s)...", timeout=900)
 
     def _q_delete(self):
         from tkinter import messagebox
@@ -1882,7 +2074,8 @@ class App(ctk.CTk):
 
         self._q_prog_set(0)
         self._run_bg(self._q_buttons, work, done=done,
-                     status="Deleting permanently...", timeout=900)
+                     status=f"Deleting {len(sel)} item(s) permanently...",
+                     timeout=900)
 
     def _q_purge(self):
         from tkinter import messagebox
@@ -2525,7 +2718,7 @@ class App(ctk.CTk):
             self._refresh_dns_current()
 
         self._run_bg(self._dns_buttons(), work, done=done,
-                     status="Changing DNS...")
+                     status=f"Changing DNS to {name} ({primary})...")
 
     def _set_dns_auto_ui(self):
         from tkinter import messagebox
@@ -2549,7 +2742,7 @@ class App(ctk.CTk):
             self._refresh_dns_current()
 
         self._run_bg(self._dns_buttons(), work, done=done,
-                     status="Changing DNS...")
+                     status="Switching DNS to automatic (ISP)...")
 
     def _undo_dns(self):
         self.dns_msg.configure(text="")
@@ -2566,7 +2759,7 @@ class App(ctk.CTk):
             self._refresh_dns_current()
 
         self._run_bg(self._dns_buttons(), work, done=done,
-                     status="Restoring DNS...")
+                     status="Restoring saved DNS settings...")
 
     def _measure_dns(self):
         self.dns_suggest_lbl.configure(text="Measuring...")
@@ -2634,7 +2827,14 @@ class App(ctk.CTk):
             self.hogs_total_lbl.configure(
                 text=f"Total: {data['recv_per_sec'] / 1024:.0f} KB/s down, "
                      f"{data['sent_per_sec'] / 1024:.0f} KB/s up")
-            self.hogs_msg.configure(text=msg)
+            # v2.8.0: a pending kill result survives the refresh —
+            # the old code overwrote "Closed 1/1" with the measurement
+            # text the instant it arrived (same family as the v2.7.0
+            # kill-message bug).
+            pending = getattr(self, "_hog_result_msg", "")
+            self._hog_result_msg = ""
+            self.hogs_msg.configure(
+                text=msg + (f" — {pending}" if pending else ""))
 
         self._run_bg([self.hogs_btn], work, done=done,
                      status="Measuring bandwidth...")
@@ -2668,11 +2868,14 @@ class App(ctk.CTk):
                 self.hogs_msg.configure(text=f"Error: {n}")
                 return
             action_log.log("kill_hogs", {"killed": n})
-            self.hogs_msg.configure(text=f"Closed {n}/{len(targets)} app(s).")
+            # v2.8.0: do not set the message here — _find_hogs() below
+            # overwrites it immediately. Park it for _find_hogs' done().
+            self._hog_result_msg = f"Closed {n}/{len(targets)} app(s)."
             self._find_hogs()
 
+        names = ", ".join(friendly_app_name(nm) for _pid, nm in targets[:3])
         self._run_bg([self.hogs_kill_btn], work, done=done,
-                     status="Closing apps...")
+                     status=f"Closing {names}...")
 
     def _adapter_reset_prompt(self):
         dlg = ctk.CTkToplevel(self)
@@ -2875,7 +3078,12 @@ class App(ctk.CTk):
                                            "Enabled" if it["enabled"] else "Disabled",
                                            "Yes" if it["protected"] else "No"),
                                    tags=tuple(tags))
-            self.s_msg.configure(text=msg if ok else msg)
+            # v2.8.0: a pending toggle result survives the refresh
+            # (same message-clobber family as the hogs fix above).
+            pending = getattr(self, "_startup_result_msg", "")
+            self._startup_result_msg = ""
+            self.s_msg.configure(
+                text=msg + (f" | {pending}" if pending else ""))
 
         self._run_bg([self.s_refresh_btn], work, done=done,
                      status="Loading startup apps...")
@@ -2921,7 +3129,10 @@ class App(ctk.CTk):
             if skipped_protected:
                 text += (" | Skipped (protected): "
                          + ", ".join(skipped_protected))
-            self.s_msg.configure(text=text)
+            # v2.8.0: park the result for the refresh's done() instead
+            # of setting it here — _refresh_startup() overwrites s_msg
+            # with "Loading..." the moment it is called.
+            self._startup_result_msg = text
             self._refresh_startup()
 
         self._run_bg([self.s_disable_btn, self.s_enable_btn], work, done=done,
