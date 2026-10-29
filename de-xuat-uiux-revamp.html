@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CleanBoost — Review & Đề xuất UI/UX Revamp</title>
+<style>
+:root{
+  --bg:#0b1020; --bg2:#111733; --card:#161d3d; --card2:#1d2752;
+  --line:#2a3470; --txt:#e8edff; --mut:#8b95d6; --mut2:#5d68a8;
+  --accent:#5b8cff; --accent2:#22d3ee; --ok:#34d399; --warn:#fbbf24;
+  --err:#fb6f6f; --crit:#f43f5e; --shadow:0 10px 40px rgba(0,0,0,.45);
+  --radius:14px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+  line-height:1.6;-webkit-font-smoothing:antialiased}
+body{background:
+  radial-gradient(1200px 700px at 10% -10%, rgba(91,140,255,.15), transparent 60%),
+  radial-gradient(900px 600px at 110% 10%, rgba(34,211,238,.10), transparent 60%),
+  var(--bg)}
+.wrap{max-width:1180px;margin:0 auto;padding:48px 24px 120px}
+header{margin-bottom:40px}
+.kicker{display:inline-flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent2);font-weight:700;margin-bottom:14px}
+.kicker .dot{width:8px;height:8px;border-radius:50%;background:var(--accent2);
+  box-shadow:0 0 12px var(--accent2)}
+h1{font-size:42px;line-height:1.15;margin:0 0 10px;font-weight:800;letter-spacing:-.02em}
+h1 .gr{background:linear-gradient(120deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{font-size:17px;color:var(--mut);max-width:740px}
+.meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.chip{font-size:12px;padding:5px 11px;border-radius:999px;background:var(--card);
+  border:1px solid var(--line);color:var(--mut)}
+.chip b{color:var(--txt)}
+
+.toc{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px 22px;margin:32px 0;display:grid;grid-template-columns:repeat(2,1fr);gap:8px 22px}
+.toc .h{grid-column:1/-1;font-weight:700;color:var(--mut);font-size:12px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:6px}
+.toc a{color:var(--txt);text-decoration:none;font-size:14px;padding:4px 0;display:flex;
+  gap:8px;align-items:center;border-bottom:1px solid transparent}
+.toc a:hover{color:var(--accent)}
+.toc a .n{color:var(--mut2);font-variant-numeric:tabular-nums;font-weight:600;width:24px}
+
+section{padding:48px 0;border-top:1px solid var(--line)}
+section h2{font-size:28px;margin:0 0 8px;font-weight:800;letter-spacing:-.01em}
+section .lead{color:var(--mut);font-size:16px;max-width:760px;margin-bottom:28px}
+
+.grid{display:grid;gap:18px}
+.cols-2{grid-template-columns:repeat(2,1fr)}
+.cols-3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:880px){.cols-2,.cols-3{grid-template-columns:1fr}}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  padding:22px;transition:transform .15s ease,border-color .15s}
+.card:hover{transform:translateY(-2px);border-color:var(--accent)}
+.card .ttl{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:17px;font-weight:700}
+.sev{font-size:11px;font-weight:800;letter-spacing:.08em;padding:3px 8px;border-radius:6px;text-transform:uppercase}
+.sev.crit{background:rgba(244,63,94,.15);color:var(--crit);border:1px solid rgba(244,63,94,.35)}
+.sev.high{background:rgba(251,111,111,.15);color:var(--err);border:1px solid rgba(251,111,111,.35)}
+.sev.med{background:rgba(251,191,36,.15);color:var(--warn);border:1px solid rgba(251,191,36,.35)}
+.sev.low{background:rgba(52,211,153,.15);color:var(--ok);border:1px solid rgba(52,211,153,.35)}
+.file{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12.5px;
+  color:var(--accent2);background:rgba(34,211,238,.08);padding:2px 8px;border-radius:6px;
+  display:inline-block;margin:2px 0 4px;border:1px solid rgba(34,211,238,.18)}
+.card p{margin:8px 0;color:var(--mut)}
+.card .fix{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}
+.card .fix b{color:var(--ok)}
+.card .fx{color:var(--txt)}
+
+table{width:100%;border-collapse:collapse;background:var(--card);
+  border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);font-size:14px}
+th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);
+  background:var(--bg2);font-weight:700}
+tr:last-child td{border-bottom:none}
+td .pill{font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px}
+td .pill.ok{background:rgba(52,211,153,.15);color:var(--ok)}
+td .pill.no{background:rgba(251,111,111,.15);color:var(--err)}
+td .pill.half{background:rgba(251,191,36,.15);color:var(--warn)}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;color:var(--accent2)}
+
+/* mockup toolbar */
+.mock{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);
+  overflow:hidden;box-shadow:var(--shadow);margin-top:14px}
+.mock .tb{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);background:rgba(0,0,0,.18)}
+.mock .tb .logo{font-weight:800;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.mock .tb .logo .mk{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;color:#0b1020;font-size:13px;font-weight:900}
+.mock .tb .nav{display:flex;gap:4px;margin-left:14px}
+.mock .tb .nav span{padding:6px 12px;border-radius:8px;color:var(--mut);font-size:13px;cursor:pointer;font-weight:500}
+.mock .tb .nav span.active{background:var(--card);color:var(--txt)}
+.mock .tb .srch{margin-left:auto;display:flex;align-items:center;gap:8px;background:var(--card);padding:6px 12px;border-radius:8px;font-size:13px;color:var(--mut)}
+.mock .tb .srch input{background:none;border:none;color:var(--txt);outline:none;font-size:13px;width:180px}
+.mock .body{display:grid;grid-template-columns:200px 1fr;min-height:380px}
+.mock .sb{border-right:1px solid var(--line);padding:14px 10px;background:rgba(0,0,0,.1)}
+.mock .sb .it{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:var(--mut);font-size:13.5px;cursor:pointer}
+.mock .sb .it.active{background:linear-gradient(90deg,rgba(91,140,255,.18),rgba(34,211,238,.06));color:var(--txt);font-weight:600}
+.mock .sb .it .ic{width:28px;height:28px;border-radius:8px;background:var(--card2);display:grid;place-items:center;font-size:14px}
+.mock .sb .it .badge{margin-left:auto;font-size:10px;background:var(--accent);color:#0b1020;font-weight:800;padding:2px 6px;border-radius:6px}
+.mock .main{padding:20px}
+.mock .row{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+.mock .kpi{flex:1;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.mock .kpi .k{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.1em;font-weight:700}
+.mock .kpi .v{font-size:24px;font-weight:800;margin-top:2px}
+.mock .kpi .v small{font-size:13px;color:var(--mut);font-weight:600}
+.mock .kpi.cpu .v{color:var(--accent)}
+.mock .kpi.mem .v{color:var(--accent2)}
+.mock .kpi.disk .v{color:var(--warn)}
+.mock .kpi.health .v{color:var(--ok)}
+.gauge{height:8px;border-radius:6px;background:var(--card2);overflow:hidden;margin-top:8px}
+.gauge i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:9px;
+  font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--line);background:var(--card2);color:var(--txt)}
+.btn.primary{background:linear-gradient(120deg,var(--accent),#4f7bff);color:#fff;border:none}
+.btn.ghost{background:transparent}
+.btn.danger{background:rgba(244,63,94,.18);color:var(--crit);border-color:rgba(244,63,94,.4)}
+.pilltag{font-size:11px;padding:2px 7px;border-radius:6px;background:var(--card2);color:var(--mut);font-weight:600}
+.toast{position:fixed;right:22px;bottom:22px;background:var(--card);border:1px solid var(--line);
+  border-radius:12px;padding:12px 16px;box-shadow:var(--shadow);font-size:13px;max-width:320px;
+  display:flex;gap:10px;align-items:flex-start}
+.toast .ico{width:22px;height:22px;border-radius:7px;background:var(--ok);color:#0b1020;display:grid;place-items:center;font-weight:900;flex:none}
+
+.callout{border-left:3px solid var(--accent2);background:rgba(34,211,238,.06);
+  padding:14px 18px;border-radius:0 12px 12px 0;margin:18px 0;color:var(--mut)}
+.callout b{color:var(--txt)}
+
+ul.feat{margin:10px 0 0;padding-left:18px}
+ul.feat li{margin:4px 0;color:var(--mut)}
+ul.feat li::marker{color:var(--accent)}
+
+.kbd{font-family:ui-monospace,monospace;font-size:11.5px;background:var(--card2);
+  border:1px solid var(--line);border-bottom-width:2px;padding:2px 7px;border-radius:6px;color:var(--txt)}
+
+footer{margin-top:60px;padding-top:24px;border-top:1px solid var(--line);color:var(--mut2);font-size:13px;text-align:center}
+a{color:var(--accent)}
+.divider{height:1px;background:var(--line);margin:14px 0}
+.stat-row{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px}
+.stat-row .s{font-size:13px;color:var(--mut)}
+.stat-row .s b{color:var(--txt);font-size:18px;display:block;font-weight:800}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="kicker"><span class="dot"></span> CODE REVIEW · UI/UX REVAMP PROPOSAL</span>
+  <h1>CleanBoost — <span class="gr">Review & Đề xuất lại toàn diện</span></h1>
+  <p class="sub">Bản phân tích chi tiết các lỗi chạy được/lỗi tiềm ẩn trong source code hiện tại, kèm đề xuất thiết kế lại giao diện pro hơn để các tính năng thực sự chạy đúng như kỳ vọng.</p>
+  <div class="meta">
+    <span class="chip"><b>Phiên bản xem:</b> v2.8.x</span>
+    <span class="chip"><b>Theo yêu cầu:</b> Manh Dau Sy</span>
+    <span class="chip"><b>Files:</b> 51 Python · 1 YAML</span>
+    <span class="chip"><b>Py-compile:</b> <span style="color:var(--ok)">PASS — 0 lỗi</span></span>
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="h">Mục lục</div>
+  <a href="#sum"><span class="n">01</span> Tổng quan & số liệu</a>
+  <a href="#bugs"><span class="n">02</span> Lỗi thực (12 lỗi, có file:line)</a>
+  <a href="#matrix"><span class="n">03</span> Ma trận tính năng — chạy / không chạy</a>
+  <a href="#ux"><span class="n">04</span> Vấn đề UX "feels broken"</a>
+  <a href="#mock"><span class="n">05</span> Mockup giao diện đề xuất</a>
+  <a href="#flow"><span class="n">06</span> Sửa luồng tối ưu 1-click</a>
+  <a href="#net"><span class="n">07</span> Fix tab Network</a>
+  <a href="#roadmap"><span class="n">08</span> Lộ trình triển khai</a>
+</nav>
+
+<section id="sum">
+  <h2>01 · Tổng quan & số liệu</h2>
+  <p class="lead">ReviewLine 51 file Python, build toàn bộ dependency graph và chạy <span class="mono">py_compile</span> cho 23 file chính. Code <b style="color:var(--ok)">biên dịch sạch — 0 lỗi cú pháp</b>. Các call site ↔ định nghĩa hàm khớp hết. Discipline phòng thủ khá chắc: never-raise returns, <span class="mono">_post_ui</span> queue, task-id race fix, anti-PID-reuse, quarantine-junction pruning. Vấn đề tập trung ở <b>3 vùng</b>:</p>
+  <div class="stat-row">
+    <div class="s"><b style="font-size:30px;color:var(--crit)">3</b> Lỗi CRITICAL<br>(tính năng không chạy)</div>
+    <div class="s"><b style="font-size:30px;color:var(--err)">5</b> Lỗi HIGH<br>(treo/giật UI)</div>
+    <div class="s"><b style="font-size:30px;color:var(--warn)">4</b> Lỗi MID<br>(silent skip)</div>
+    <div class="s"><b style="font-size:30px;color:var(--ok)">0</b> Lỗi compile/import</div>
+  </div>
+
+  <div class="callout" style="margin-top:22px">
+    <b>Nguyên nhân gốc:</b> Action-special rules (DISM / Docker prune / Snap prune) trả về <span class="mono">size:0, count:0</span> theo thiết kế — nhưng cả GUI và CLI <span class="mono">--all</span> đều dùng <span class="mono">size > 0</span> làm bộ lọc. Kết quả: 4 tính năng level 2/3 quảng cáo trong README <b>không thể truy cập được từ giao diện</b>, và weekly auto-clean cũng <b>không bao giờ chạy chúng</b>.
+  </div>
+</section>
+
+<section id="bugs">
+  <h2>02 · Lỗi thực — 12 lỗi cụ thể</h2>
+  <p class="lead">Mỗi mục có <span class="file">file:line</span> chính xác, mô tả lý do hỏng, và đề xuất fix ngắn. Sắp theo mức độ nghiêm trọng.</p>
+
+  <div class="grid cols-2">
+
+    <div class="card">
+      <div class="ttl">DISM / Docker / Snap ẩn trong GUI <span class="sev crit">CRITICAL</span></div>
+      <span class="file">ui/app.py:1776-1777</span>
+      <p><b>Triệu chứng:</b> Scan level 2/3 không hiển thị DISM StartComponentCleanup, ResetBase, Docker prune, Snap prune — dù README nói có.</p>
+      <p><b>Lý do:</b> <span class="mono">if res["size"]==0 and res["count"]==0: continue</span> — action-specials trả về size 0/count 0 theo thiết kế (chúng chạy lệnh, không xóa file đo được).</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Hiển thị card khi <span class="mono">res.get("special")</span> hoặc <span class="mono">res.get("note")</span>, bất kể size. Card sẽ cho tick + chạy clean_rules với id đó.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">CLI <span class="mono">--all</span> bỏ sót action-specials <span class="sev crit">CRITICAL</span></div>
+      <span class="file">main.py:155</span>
+      <p><b>Triệu chứng:</b> <span class="mono">main.py clean --level 2 --all</span> không chạy DISM. Chỉ khi gõ số thủ công mới chạy.</p>
+      <p><b>Lý do:</b> <span class="mono">ids = {r["rule"]["id"] for r in indexed if r["size"] > 0}</span> — filter size 0.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Đổi điều kiện thành <span class="mono">if r["size"] > 0 or r.get("note")</span> — hoặc cho action-specials báo pseudo-size = 1.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">Weekly auto-clean bỏ sót DISM <span class="sev crit">CRITICAL</span></div>
+      <span class="file">auto_clean.py:34-38</span>
+      <p><b>Triệu chứng:</b> Cron/Tasks Scheduler chạy hằng tuần nhưng không bao giờ dọn DISM, Docker prune, Snap prune.</p>
+      <p><b>Lý do:</b> filter <span class="mono">risk==low and default_on and size > 0</span> — cùng lỗi size 0 như trên.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Bỏ điều kiện size, hoặc thêm flag <span class="mono">allow_action_specials=True</span> trong hàm lọc.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">Dashboard freeze 0.5s mỗi 2s <span class="sev high">HIGH</span></div>
+      <span class="file">ui/app.py:1275-1305</span>
+      <p><b>Triệu chứng:</b> Cửa sổ đông cứng nửa giây mỗi 2 giây, dashboard lag nhẹ nhưng thấy rõ.</p>
+      <p><b>Lý do:</b> <span class="mono">psutil.cpu_percent(interval=0.5)</span> chạy trên <b>UI thread</b> tham chiếu <span class="file">core/system_info.py:18</span>.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Đẩy sampling vào worker <span class="mono">_run_bg</span> như các tab khác, post qua <span class="mono">_post_ui</span>.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">EmergencyDialog đóng băng tới N×5s <span class="sev high">HIGH</span></div>
+      <span class="file">ui/app.py:627-633</span>
+      <p><b>Triệu chứng:</b> Tick nhiều app → bấm Emergency Kill → sổ tắt "not responding" tới 5s × N app.</p>
+      <p><b>Lý do:</b> <span class="mono">process_manager.kill_process(pid)</span> gọi <span class="mono">p.wait(timeout=5)</span> đồng bộ trên Tk thread, theo N.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Chuyển vòng for-kill vào worker, post progress về dialog qua <span class="mono">_post_ui</span>.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">"Current DNS: -" bị kẹt lần đầu <span class="sev high">HIGH</span></div>
+      <span class="file">ui/app.py:2461-2492</span>
+      <p><b>Triệu chứng:</b> Vào tab Network lần đầu, DNS Switcher luôn hiện "Current DNS: -" đến khi user đổi DNS lần đầu.</p>
+      <p><b>Lý do:</b> <span class="mono">_refresh_network_all</span> không gọi <span class="mono">_refresh_dns_current</span>. Nó chỉ được gọi sau khi đổi DNS.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Thêm <span class="mono">self._refresh_dns_current()</span> trong <span class="mono">_show_page("net")</span> (gate <span class="mono">if not self._net_loaded</span>).</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">Theme toggle mất state scan/quarantine <span class="sev high">HIGH</span></div>
+      <span class="file">ui/app.py:1099-1103</span>
+      <p><b>Triệu chứng:</b> Toggle theme → toàn bộ kết quả scan, selection, hogs table biến mất. Phải rescan.</p>
+      <p><b>Lý do:</b> <span class="mono">self.destroy()</span> + <span class="mono">main()</span> loop build App mới → mất hết biến instance.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Walk children + <span class="mono">configure(fg_color=...)</span> thay vì destroy. Giữ state.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">Linux scheduler viết cron vào venv không tồn tại <span class="sev high">HIGH</span></div>
+      <span class="file">cleaner/scheduler.py:101-122</span>
+      <p><b>Triệu chứng:</b> <span class="mono">main.py schedule install</span> trên Linux vẫn báo "installed" dù <span class="mono">.venv</span> chưa tạo.</p>
+      <p><b>Lý do:</b> Path Linux không có guard kiểm tra <span class="mono">.venv/bin/python</span> tồn tại — path Windows có.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Thêm guard đối xứng: <span class="mono">if not os.path.exists(py): return False, "No .venv — run: python3 -m venv .venv ..."</span></span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">Linux "Light clean" luôn báo "Root required" <span class="sev med">MID</span></div>
+      <span class="file">core/memory_cleaner.py:103-114</span>
+      <p><b>Triệu chứng:</b> GUI bấm "Light clean" trên Linux (non-root) → chỉ in "Root required", dù README nói "Completely safe".</p>
+      <p><b>Lý do:</b> <span class="mono">light_clean</span> trên Linux chỉ gọi <span class="mono">drop_caches()</span> cần root.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Trên Linux non-root, return message mềm: "Light clean needs sudo to flush caches — nothing else to do."</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">Quick Refresh tốn 6s fetch IP công khai vô ích <span class="sev med">MID</span></div>
+      <span class="file">network/refresh.py:42-53</span>
+      <p><b>Triệu chứng:</b> Quick Refresh verify mất tới 6s để fetch public IP từ ipify — mà verify không dùng tới.</p>
+      <p><b>Lý do:</b> <span class="mono">_verify</span> gọi <span class="mono">get_network_info()</span> (đi kèm 2×3s HTTP ra ipify) chỉ để đọc gateway.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Dùng <span class="mono">net_info._gateway()</span> trực tiếp, không fetch public IP.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">Casing "StartUp" sai ở path all-users <span class="sev med">MID</span></div>
+      <span class="file">core/startup.py:56</span>
+      <p><b>Triệu chứng:</b> Path folder startup all-users dùng <span class="mono">StartUp</span> thay vì <span class="mono">Startup</span>. NTFS case-insensitive nên may mắn chạy được, nhưng Samba share / WSL view sẽ miss.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Đổi <span class="mono">Programs\\StartUp</span> → <span class="mono">Programs\\Startup</span>.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl"><span class="mono">shutil.rmtree(onerror=)</span> deprecated <span class="sev med">MID</span></div>
+      <span class="file">cleaner/quarantine.py:67</span>
+      <p><b>Triệu chứng:</b> Python 3.12+ warn, 3.14+ raise TypeError. Repo khai báo Python 3.11+, sẽ vỡ khi user nâng.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Branch <span class="mono">sys.version_info >= (3,12): onexc=</span> cùng tham số.</span></div>
+    </div>
+
+  </div>
+
+  <div class="callout">
+    <b>Lưu ý tích cực:</b> Signature cross-check toàn bộ GUI↔core/network/cleaner <b>không phát hiện mismatch nào</b>. Không có unguarded cross-platform crash path. Tất cả Windows-only code đều gated. <span class="mono">verify_process_gone</span> + anti-PID-reuse đúng. Pattern v2.7/v2.8 fix race kill-message đúng.
+  </div>
+</section>
+
+<section id="matrix">
+  <h2>03 · Ma trận tính năng — chạy / không chạy</h2>
+  <p class="lead">Theo từng feature ghi trong README, kiểm chứng end-to-end tới file:line implement thật. Red = không chạy, Yellow = chạy một phần/không như kỳ vọng, Green = OK.</p>
+
+  <table>
+    <thead><tr><th>Feature</th><th>Trạng thái</th><th>Bằng chứng</th></tr></thead>
+    <tbody>
+      <tr><td><span class="mono">main.py status</span> (CPU/Mem/Disk)</td><td><span class="pill ok">OK</span></td><td><span class="file">main.py:40</span> → system_info</td></tr>
+      <tr><td><span class="mono">main.py top</span> + sort + limit</td><td><span class="pill ok">OK</span></td><td><span class="file">main.py:53</span> → process_manager</td></tr>
+      <tr><td><span class="mono">main.py kill [--force]</span></td><td><span class="pill ok">OK</span></td><td><span class="file">main.py:65</span> + protected guard</td></tr>
+      <tr><td><span class="mono">main.py freeram light</span></td><td><span class="pill half">PARTIAL</span></td><td>Linux non-root → "Root required"</td></tr>
+      <tr><td><span class="mono">main.py freeram standard</span></td><td><span class="pill ok">OK</span></td><td>Interactive kill, có confirm</td></tr>
+      <tr><td><span class="mono">scan --level 1/2/3</span></td><td><span class="pill ok">OK</span></td><td><span class="file">scanner.py:214</span></td></tr>
+      <tr><td><span class="mono">clean --all</span> chạy DISM/ResetBase</td><td><span class="pill no">NO</span></td><td>Filter size>0 tại <span class="file">main.py:155</span></td></tr>
+      <tr><td>GUI Disk Cleaner: DISM/Docker/Snap</td><td><span class="pill no">NO</span></td><td>Hidden bởi size==0 tại <span class="file">app.py:1776</span></td></tr>
+      <tr><td>GUI Disk Cleaner: scan/clean rules đo được</td><td><span class="pill ok">OK</span></td><td>Temp / Cache / Recycle / Logs OK</td></tr>
+      <tr><td><span class="mono">quarantine list/restore/purge</span></td><td><span class="pill ok">OK</span></td><td><span class="file">quarantine.py:182/267</span></td></tr>
+      <tr><td><span class="mono">quarantine delete</span> subcommand</td><td><span class="pill ok">OK</span></td><td>Code có nhưng README thiếu</td></tr>
+      <tr><td><span class="mono">schedule install</span> Windows</td><td><span class="pill ok">OK</span></td><td>Check .venv + Task Scheduler</td></tr>
+      <tr><td><span class="mono">schedule install</span> Linux</td><td><span class="pill half">PARTIAL</span></td><td>Không check .venv → cron báo fail yên lặng</td></tr>
+      <tr><td><span class="mono">schedule status/remove</span></td><td><span class="pill ok">OK</span></td><td><span class="file">scheduler.py</span></td></tr>
+      <tr><td><span class="mono">monitor</span></td><td><span class="pill ok">OK</span></td><td><span class="file">main.py:259</span> + action_log</td></tr>
+      <tr><td>GUI Overview (gauges, Free RAM, Light)</td><td><span class="pill half">RUNS LAGGY</span></td><td>0.5s freeze mỗi 2s <span class="file">app.py:1275</span></td></tr>
+      <tr><td>GUI Processes (table/sort/kill/force)</td><td><span class="pill ok">OK</span></td><td>verify_process_gone + anti-respawn</td></tr>
+      <tr><td>GUI Emergency Kill dialog</td><td><span class="pill half">HANGS</span></td><td>N×5s sync kill trên UI thread</td></tr>
+      <tr><td>GUI Quarantine (5 thao tác)</td><td><span class="pill ok">OK</span></td><td>List/restore/delete/purge/destroy</td></tr>
+      <tr><td>GUI Network Overview (info/ports/SSH)</td><td><span class="pill ok">OK</span></td><td><span class="file">app.py:2222</span></td></tr>
+      <tr><td>GUI Network Test (speed/diag/hogs)</td><td><span class="pill ok">OK</span></td><td>before/after cache đúng</td></tr>
+      <tr><td>GUI DNS Switcher (lần đầu)</td><td><span class="pill no">NO LABEL</span></td><td>"Current DNS: -" stuck <span class="file">app.py:2492</span></td></tr>
+      <tr><td>GUI Quick Refresh / Flush (Windows)</td><td><span class="pill ok">OK</span></td><td>Progress steps rõ</td></tr>
+      <tr><td>GUI Adapter / Deep Reset (Windows)</td><td><span class="pill ok">OK</span></td><td>Countdown + admin-gate</td></tr>
+      <tr><td>GUI Startup tab</td><td><span class="pill half">WIN ONLY</span></td><td>Linux → tab dead-end</td></tr>
+      <tr><td>Health Score</td><td><span class="pill ok">OK</span></td><td><span class="file">health.py:85</span></td></tr>
+      <tr><td>Optimize 1-Click</td><td><span class="pill ok">OK</span></td><td>RAM+clean+refresh+ping</td></tr>
+      <tr><td>Orphan detector</td><td><span class="pill ok">OK</span></td><td>Confidence enforce, medium→only non-permanent</td></tr>
+      <tr><td>Single-instance guard</td><td><span class="pill ok">OK</span></td><td>PID-reuse anti-via create_time</td></tr>
+      <tr><td>Weekly auto-clean (DISM/Docker/Snap)</td><td><span class="pill no">NO</span></td><td><span class="file">auto_clean.py:35</span> filter size</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <b>Tổng: 22 OK · 5 PARTIAL/HANGS · 4 NO/NO-LABEL</b> — chỉ 4 nhóm feature thực sự không chạy như kỳ vọng. Source code nền tảng tốt, vấn đề là lớp GUI/display filter và vài path edge-case chứ không phải logic cốt lõi.
+  </div>
+</section>
+
+<section id="ux">
+  <h2>04 · Vấn đề UX — "feels broken" dù code chạy</h2>
+  <p class="lead">User báo "một số tính năng không chạy hoặc không như kỳ vọng" — đa số nằm ở nhóm này: code path OK nhưng cảm giác dùng đồng nghĩa hỏng.</p>
+
+  <div class="grid cols-2">
+    <div class="card">
+      <div class="ttl">Auto-refresh Top-10 queue chồng <span class="sev med">UX</span></div>
+      <span class="file">ui/app.py:1296-1304</span>
+      <p>Mỗi ~20s Top10 auto-refresh. Nếu task trước vẫn chạy, nút disable + status "Queued: …" kéo dài. User đọc là "nút chết".</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Nếu nút đang disable → bỏ round này thay vì queue. Coalesce.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">Dead branches "Busy — please try again" <span class="sev low">DEAD CODE</span></div>
+      <span class="file">app.py:2487,2531,2548</span>
+      <p><span class="mono">_run_bg</span> luôn return True (queue-now design), nên nhánh <span class="mono">if not started: ...</span> không bao giờ kích. Reader tưởng có fallback.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Xoá các nhánh dead này để code nhất quán với thực tế.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl"><span class="mono">report_callback_exception</span> có lỗ hổng <span class="sev med">SAFE NET</span></div>
+      <span class="file">ui/app.py:975-1002</span>
+      <p>Safety net import <span class="mono">from gui import _crash_log_path</span> trong handler. Nếu <span class="mono">gui.py</span> fail import trước đó, <span class="mono">from gui import</span> raise ImportError, bị swallow bởi <span class="mono">except: pass</span> → popup fail yên lặng.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Implement <span class="mono">_crash_log_path</span> tại chỗ, không phụ thuộc import chéo.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">Scan level 3 treo nhiều phút <span class="sev med">UX</span></div>
+      <span class="file">cleaner/scanner.py:36-95</span>
+      <p>Win <span class="mono">C:\\</span> collect tới 200k path + getsize, giữ trong memory cả session. Dashboard 0.5s freeze × stack-up. UX đọc "Scan hang forever".</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Stream path ra disk, chỉ collect khi user tick. Cap memory. Hiện deterministic count thay vì progress indeterminate.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">Status bar không tự xóa <span class="sev low">UX</span></div>
+      <span class="file">ui/app.py</span> các handler
+      <p>Nhiều message báo lỗi vẫn ở sau khi fix xong — đọc là "vẫn lỗi".</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Auto-clear msg 5s sau khi đặt bằng <span class="mono">self.after(5000, lambda: msg.configure(text=""))</span>.</span></div>
+    </div>
+
+    <div class="card">
+      <div class="ttl">Linux: DNS/Refresh/Repair/Startup dead buttons <span class="sev med">PLATFORM</span></div>
+      <span class="file">ui/app.py</span> Network & Startup
+      <p>Bấm vẫn click được nhưng trả "requires Windows". Nên disable + tooltip rõ.</p>
+      <div class="fix"><span class="fx"><b>Fix:</b> Trên khác OS: <span class="mono">configure(state="disabled")</span> + tooltip lý do.</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="mock">
+  <h2>05 · Mockup giao diện đề xuất (pro hơn)</h2>
+  <p class="lead">Dưới đây là layout target cho bản revamp — tái cấu trúc ngăn xếp nav, sidebar groups theo mục đích, top-bar có search + status ring + theme toggle không phá state, KPI cards thay gauge thô, và toast thay cho message label vĩnh viễn.</p>
+
+  <div class="mock">
+    <div class="tb">
+      <div class="logo"><div class="mk">C</div> CleanBoost</div>
+      <div class="nav">
+        <span>Overview</span><span class="active">Processes</span><span>Cleaner</span><span>Quarantine</span><span>Network</span><span>Startup</span><span>Schedule</span>
+      </div>
+      <div class="srch">🔍 <input placeholder="Tìm process / rule / app..." /></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost">🌙</button>
+        <button class="btn primary">⚡ Optimize 1-Click</button>
+      </div>
+    </div>
+    <div class="body">
+      <div class="sb">
+        <div class="it"><span class="ic">📊</span> Overview</div>
+        <div class="it active"><span class="ic">⚙️</span> Processes <span class="badge">42</span></div>
+        <div class="it"><span class="ic">🧹</span> Disk Cleaner</div>
+        <div class="it"><span class="ic">📦</span> Quarantine <span class="badge" style="background:var(--warn);color:#000">3</span></div>
+        <div class="it"><span class="ic">🌐</span> Network</div>
+        <div class="it"><span class="ic">🚀</span> Startup</div>
+        <div class="it"><span class="ic">📅</span> Schedule</div>
+        <div class="it"><span class="ic">📜</span> Action Log</div>
+      </div>
+      <div class="main">
+        <div class="row">
+          <div class="kpi cpu">
+            <div class="k">CPU</div>
+            <div class="v">23% <small>/ 8 cores</small></div>
+            <div class="gauge"><i style="width:23%"></i></div>
+          </div>
+          <div class="kpi mem">
+            <div class="k">Memory</div>
+            <div class="v">6.4 GB <small>/ 16 GB</small></div>
+            <div class="gauge"><i style="width:40%;background:linear-gradient(90deg,#22d3ee,#5b8cff)"></i></div>
+          </div>
+          <div class="kpi disk">
+            <div class="k">Disk C:</div>
+            <div class="v">312 GB <small>/ 512 GB</small></div>
+            <div class="gauge"><i style="width:61%;background:linear-gradient(90deg,#fbbf24,#fb6f6f)"></i></div>
+          </div>
+          <div class="kpi health">
+            <div class="k">Health Score</div>
+            <div class="v">87 <small>Good</small></div>
+            <div class="gauge"><i style="width:87%;background:linear-gradient(90deg,#34d399,#22d3ee)"></i></div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+          <span class="pilltag">42 processes</span>
+          <span class="pilltag" style="background:rgba(251,111,111,.18);color:var(--err)">3 high CPU</span>
+          <span class="pilltag">Sort: CPU ↓</span>
+          <div style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn">🔄 Refresh</button>
+            <button class="btn danger">⛔ End selected</button>
+            <button class="btn" style="background:rgba(244,63,94,.22);color:var(--crit)">⚠️ Force kill</button>
+          </div>
+        </div>
+        <table style="border-radius:10px">
+          <thead><tr><th>PID</th><th>Name</th><th>CPU</th><th>MEM</th><th>Disk</th><th>Net</th><th></th></tr></thead>
+          <tbody>
+            <tr><td class="mono">842</td><td>chrome.exe</td><td style="color:var(--err)">38%</td><td>1.2 GB</td><td>—</td><td style="color:var(--warn)">2.4 MB/s</td><td><button class="btn ghost" style="padding:3px 8px">⋯</button></td></tr>
+            <tr><td class="mono">114</td><td>code.exe</td><td>14%</td><td>820 MB</td><td>—</td><td>—</td><td><button class="btn ghost" style="padding:3px 8px">⋯</button></td></tr>
+            <tr><td class="mono">886</td><td>firefox.exe</td><td>9%</td><td>650 MB</td><td>—</td><td>1.1 MB/s</td><td><button class="btn ghost" style="padding:3px 8px">⋯</button></td></tr>
+            <tr><td class="mono">2244</td><td>node.exe</td><td>4%</td><td>280 MB</td><td>—</td><td>—</td><td><button class="btn ghost" style="padding:3px 8px">⋯</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="t1">
+    <div class="ico">✓</div>
+    <div><b>Closed 1/1 app.</b><br><span style="color:var(--mut)">verify_process_gone: respawn check passed.</span></div>
+  </div>
+  <div class="grid cols-3" style="margin-top:24px">
+    <div class="card">
+      <div class="ttl">S侧 bar nhóm theo mục đích</div>
+      <p>Thay vì 6 tab phẳng, nhóm thành 3 cụm: <b>Monitor</b> (Overview/Processes/Network), <b>Cleanup</b> (Cleaner/Quarantine/Schedule), <b>System</b> (Startup/Log). Badges số active/run trên icon.</p>
+    </div>
+    <div class="card">
+      <div class="ttl">KPI cards + Health Ring</div>
+      <p>Gauge dạng thanh ngang rõ hơn cữ số thô. Health score dạng ring/radial lớn để user hiểu ngay tình trạng. Tooltips hover giải thích mỗi chỉ số.</p>
+    </div>
+    <div class="card">
+      <div class="ttl">Toast + auto-clear msg</div>
+      <p>Kết quả action → toast góc dưới phải, tự ẩn sau 5s. Status bar chỉ cho tiến trình, không cho kết quả cuối. Tránh message vĩnh viễn "đọc là lỗi cũ".</p>
+    </div>
+    <div class="card">
+      <div class="ttl">Optimize 1-Click nút toàn cục</div>
+      <p>Đưa lên top-bar với icon ⚡, progress ring trên nút. Trả summary dialog với so sánh before/after (ping ms, RAM freed MB).</p>
+    </div>
+    <div class="card">
+      <div class="ttl">Search toàn cục</div>
+      <p>Top-bar search để tìm process / rule / quarantine item / scheduled job. Nhanh hơn tab-switch manual.</p>
+    </div>
+    <div class="card">
+      <div class="ttl">Theme không phá state</div>
+      <p>Walk children re-color, không destroy App. Scan list/selection/quarantine selection giữ nguyên khi toggle dark/light.</p>
+    </div>
+  </div>
+</section>
+
+<section id="flow">
+  <h2>06 · Sửa luồng Disk Cleaner & Optimize 1-Click</h2>
+  <p class="lead">Hai luồng user kỳ vọng nhiều nhất nhưng đang bị gap: disk cleaner không ra hết rule + luồng optimize không phản hồi trước/sau rõ ràng.</p>
+
+  <div class="card" style="margin-top:14px">
+    <div class="ttl">Disk Cleaner — proposed card layout</div>
+    <p>Thay list flat checkbox như hiện tại, mỗi rule = card riêng với 4 trạng thái hiển thị:</p>
+    <div class="grid cols-3" style="margin-top:14px">
+      <div style="background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:14px">
+        <div style="font-weight:700;font-size:14px;margin-bottom:6px">#1 Windows Temp</div>
+        <div style="color:var(--mut);font-size:12px">480 MB · 3,214 files</div>
+        <div style="margin-top:8px"><span class="pilltag" style="background:rgba(52,211,153,.15);color:var(--ok)">Risk: low</span> <span class="pilltag">Level 1</span></div>
+        <div style="margin-top:10px"><input type="checkbox" checked> Tick để xóa</div>
+      </div>
+      <div style="background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:14px">
+        <div style="font-weight:700;font-size:14px;margin-bottom:6px;font-style:italic;color:var(--accent2)">DISM StartComponentCleanup</div>
+        <div style="color:var(--mut);font-size:12px">— chạy lệnh, không đo size</div>
+        <div style="margin-top:8px"><span class="pilltag" style="background:rgba(251,191,36,.15);color:var(--warn)">Risk: mid</span> <span class="pilltag">Level 2</span> <span class="pilltag" style="background:rgba(34,211,238,.15);color:var(--accent2)">ACTION</span></div>
+        <div style="margin-top:10px"><input type="checkbox"> Tick để chạy (cần Admin)</div>
+      </div>
+      <div style="background:var(--card2);border:1px solid rgba(244,63,94,.3);border-radius:10px;padding:14px">
+        <div style="font-weight:700;font-size:14px;margin-bottom:6px;color:var(--crit)">DISM ResetBase ⚠️</div>
+        <div style="color:var(--mut);font-size:12px">Không thể undo — cẩn thận</div>
+        <div style="margin-top:8px"><span class="pilltag" style="background:rgba(244,63,94,.15);color:var(--crit)">Risk: high</span> <span class="pilltag">Level 3</span></div>
+        <div style="margin-top:10px"><input type="checkbox"> Tick để chạy — yêu cầu confirm dialog</div>
+      </div>
+    </div>
+    <div class="callout" style="margin-top:14px">
+      <b>Áp dụng fix bug #1, #2, #3:</b> Card xuất hiện khi <span class="mono">res.get("special")</span> hoặc <span class="mono">res.get("note")</span> — bất kể size. Khi tick, rule id được đưa vào <span class="mono">clean_rules(ids)</span>. <span class="mono">--all</span> CLI bao gồm cả action-specials. Weekly auto-clean không còn filter size.
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <div class="ttl">Optimize 1-Click — Phase indicator</div>
+    <p>Trong khi chạy, hiện progress theo phase (dạng stepper) thay vì text + dòng:</p>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+      <div style="font-size:13px;padding:8px 12px;border-radius:8px;background:rgba(52,211,153,.18);color:var(--ok)">✓ 1/5 Light RAM clean</div>
+      <div style="font-size:13px;padding:8px 12px;border-radius:8px;background:rgba(52,211,153,.18);color:var(--ok)">✓ 2/5 Scan level-1</div>
+      <div style="font-size:13px;padding:8px 12px;border-radius:8px;background:rgba(91,140,255,.18);color:var(--accent)">● 3/5 Quarantine</div>
+      <div style="font-size:13px;padding:8px 12px;border-radius:8px;background:var(--card2);color:var(--mut2)">○ 4/5 Quick Refresh</div>
+      <div style="font-size:13px;padding:8px 12px;border-radius:8px;background:var(--card2);color:var(--mut2)">○ 5/5 Ping verify</div>
+    </div>
+    <div style="margin-top:18px;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:14px">
+      <div style="font-weight:700;margin-bottom:8px">Result dialog:</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:13px">
+        <div>RAM freed: <b style="color:var(--ok)">+ 412 MB</b></div>
+        <div>Disk freed: <b style="color:var(--ok)">+ 1.8 GB</b></div>
+        <div>Ping before: <b>87 ms</b></div>
+        <div>Ping after: <b style="color:var(--ok)">42 ms</b> <span style="color:var(--ok)">▼ 45 ms</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="net">
+  <h2>07 · Sửa tab Network</h2>
+  <p class="lead">Tab Network hiện có 5 sub-tab phẳng và DNS label bug. Đề xuất:</p>
+  <ul class="feat">
+    <li>Bỏ sub-tab phẳng → dùng accordion sections (Overview → Speed → Diagnostics → Hogs → DNS/Refresh → Repair), mở bằng mặc định cái active.</li>
+    <li>"DNS & Refresh" đổi tên rõ hơn: "Quick Refresh" → "Refresh DNS + IP (drop ~5s)", "Flush Network" → "Clear stale caches (no disconnect)".</li>
+    <li>"Current DNS" label load ngay khi vào tab Network lần đầu (apply fix bug #5).</li>
+    <li>Trên Linux: Disable buttons DNS/Repair/Startup thay vì để click được rồi báo "requires Windows".</li>
+    <li>Speed test: hiện kết quả dạng card so sánh Before/After side-by-side, không phải 2 dòng label text.</li>
+    <li>Bandwidth hogs: thêm cột "Avg RX/TX (3s sample)" để user thấy rõ app nào "hút băng thông".</li>
+  </ul>
+</section>
+
+<section id="roadmap">
+  <h2>08 · Lộ trình triển khai</h2>
+  <p class="lead">Chia 3 phase, mỗi phase có thể release độc lập. Ưu tiên bug trước, refactor nhẹ, sau mới tới revamp UI.</p>
+
+  <div class="grid cols-3">
+    <div class="card">
+      <div class="ttl">Phase 1 · Fix bugs ưu tiên <span class="sev crit">1-2 ngày</span></div>
+      <ul class="feat">
+        <li>Bug #1 — show action-special cards (app.py:1776)</li>
+        <li>Bug #2 — <span class="mono">--all</span> CLI include action-specials (main.py:155)</li>
+        <li>Bug #3 — auto_clean bỏ filter size</li>
+        <li>Bug #5 — DNS current label (app.py:2492)</li>
+        <li>Bug #8 — Linux scheduler guard .venv</li>
+        <li>Bug #9 — <span class="mono">_gateway()</span> thay vì full info</li>
+        <li>Bug #7 — fix casing <span class="mono">Startup</span></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="ttl">Phase 2 · Sửa UI thread <span class="sev high">2-3 ngày</span></div>
+      <ul class="feat">
+        <li>Bug #3 — dashboard sampling vào worker</li>
+        <li>Bug #4 — EmergencyDialog kills vào worker</li>
+        <li>Bug #6 — theme walk-children thay vì destroy</li>
+        <li>Auto-clear msg sau 5s</li>
+        <li>Trim dead branches <span class="mono">if not started</span></li>
+        <li><span class="mono">_tick_status</span> đúng dùng worker pattern</li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="ttl">Phase 3 · UI/UX revamp <span class="sev med">3-5 ngày</span></div>
+      <ul class="feat">
+        <li>Sidebar nhóm 3 cụm + badges</li>
+        <li>KPI cards + Health ring</li>
+        <li>Toast + auto-clear</li>
+        <li>Top-bar search toàn cục</li>
+        <li>Cleaner cards thay checkbox flat</li>
+        <li>Optimize 1-click stepper + result dialog</li>
+        <li>Network accordion + Speed card so sánh</li>
+        <li>Platform-gated buttons disable + tooltip</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:24px">
+    <b>Khuyến nghị:</b> Làm Phase 1 trước (1-2 ngày, fix 7/12 bug, hiện 4 feature ẩn) — đã thay đổi đáng kể trải nghiệm mà không phải refactor UI. Phase 2 elimine jank. Phase 3 refactor UI theo mockup — nên làm song song dần, không cần big-bang.
+  </div>
+</section>
+
+<footer>
+  CleanBoost · Review & UI/UX Revamp Proposal · 2026-10-28<br>
+  Tổng quan 51 file · 12 lỗi thực · 4 feature ẩn · mockup + lộ trình 3 phase
+</footer>
+
+</div>
+</body>
+</html>
