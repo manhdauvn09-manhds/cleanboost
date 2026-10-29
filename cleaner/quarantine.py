@@ -9,11 +9,21 @@ import os
 import shutil
 import stat
 import sys
+import threading
 import uuid
 from datetime import datetime, timezone
 from cleaner.fs_walk import safe_walk
 
 RETENTION_DAYS = 14
+
+# RC-1 fix: every read-modify-write of the quarantine index must be
+# serialized. The atomic `_save` (tmp+os.replace) only guards a SINGLE
+# write — it does not stop the case where thread A loads [X,Y], thread
+# B loads [X,Y], A saves [Y] (deleted X), B saves [X,Y,Z] (added Z),
+# resurrecting X with a dangling index entry, or two `put`s losing one
+# new entry (the file stays on disk forever as an orphan). One module-
+# level Lock around every RMW path puts it right.
+_LOCK = threading.RLock()
 
 
 def root() -> str:
@@ -43,6 +53,11 @@ def _on_rm_error(func, path, _exc_info):
     On Windows, rmtree fails on read-only files (PermissionError) — and
     quarantined junk often contains read-only files. Without this,
     Delete permanently silently fails on exactly those items.
+
+    Works as both `onerror` (Python ≤3.11 — receives sys.exc_info() tuple)
+    and `onexc` (Python ≥3.12 — receives the exception instance); the
+    third argument is unused, so the signature is identical from our
+    side. `onerror=` is removed in 3.14, so we dispatch on version.
     """
     try:
         os.chmod(path, stat.S_IWRITE)
@@ -64,7 +79,13 @@ def _remove_path(path):
             return True, "Already gone."
         if os.path.isdir(path) and not os.path.islink(path):
             try:
-                shutil.rmtree(path, onerror=_on_rm_error)
+                # Bug #11 fix: shutil.rmtree(onerror=) is deprecated in
+                # 3.12 and removed in 3.14. Use onexc= on 3.12+ (same
+                # signature, same behavior — see _on_rm_error docstring).
+                if sys.version_info >= (3, 12):
+                    shutil.rmtree(path, onexc=_on_rm_error)
+                else:
+                    shutil.rmtree(path, onerror=_on_rm_error)
             except OSError as e:
                 return False, f"Could not delete folder: {e}"
             return True, "Folder deleted."
@@ -122,26 +143,40 @@ def _path_size(p: str) -> int:
 
 def put(orig_path: str, rule_id: str = "") -> dict:
     """Move one file or folder into quarantine. Returns the stored item."""
-    os.makedirs(root(), exist_ok=True)
-    batch = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    item_id = uuid.uuid4().hex[:12]
-    stored_rel = os.path.join(batch, f"{item_id}_{os.path.basename(orig_path)}")
-    stored_abs = os.path.join(root(), stored_rel)
-    os.makedirs(os.path.dirname(stored_abs), exist_ok=True)
-    size = _path_size(orig_path)
-    shutil.move(orig_path, stored_abs)
-    idx = _load()
-    item = {
-        "id": item_id,
-        "orig": orig_path,
-        "stored": stored_rel,
-        "size": size,
-        "rule": rule_id,
-        "quarantined_at": datetime.now(timezone.utc).isoformat(),
-    }
-    idx["items"].append(item)
-    _save(idx)
-    return item
+    LB6_orig_check = orig_path
+    try:
+        from safety import protected
+        if protected.is_protected_path(LB6_orig_check):
+            return {"error": "Refusing to quarantine a file in a "
+                              "protected system location."}
+    except Exception:  # noqa: BLE001
+        pass
+    # RC-1 fix: serialize the load-modify-write so two concurrent puts
+    # cannot each see the old index and overwrite each other's append.
+    with _LOCK:
+        os.makedirs(root(), exist_ok=True)
+        batch = datetime.now(timezone.utc).strftime(
+            "%Y%m%d_%H%M%S")
+        item_id = uuid.uuid4().hex[:12]
+        stored_rel = os.path.join(
+            batch, f"{item_id}_{os.path.basename(orig_path)}")
+        stored_abs = os.path.join(root(), stored_rel)
+        os.makedirs(os.path.dirname(stored_abs), exist_ok=True)
+        size = _path_size(orig_path)
+        shutil.move(orig_path, stored_abs)
+        idx = _load()
+        item = {
+            "id": item_id,
+            "orig": orig_path,
+            "stored": stored_rel,
+            "size": size,
+            "rule": rule_id,
+            "quarantined_at":
+                datetime.now(timezone.utc).isoformat(),
+        }
+        idx["items"].append(item)
+        _save(idx)
+        return item
 
 
 def list_items() -> list:
@@ -159,18 +194,19 @@ def prune_stale() -> int:
     Never raises.
     """
     try:
-        idx = _load()
-        items = idx.get("items", [])
-        kept = []
-        for item in items:
-            stored_abs = _safe_stored(item.get("stored", ""))
-            if stored_abs and os.path.lexists(stored_abs):
-                kept.append(item)
-        removed = len(items) - len(kept)
-        if removed:
-            idx["items"] = kept
-            _save(idx)
-        return removed
+        with _LOCK:  # RC-1 fix
+            idx = _load()
+            items = idx.get("items", [])
+            kept = []
+            for item in items:
+                stored_abs = _safe_stored(item.get("stored", ""))
+                if stored_abs and os.path.lexists(stored_abs):
+                    kept.append(item)
+            removed = len(items) - len(kept)
+            if removed:
+                idx["items"] = kept
+                _save(idx)
+            return removed
     except Exception:  # noqa: BLE001
         return 0
 
@@ -181,39 +217,54 @@ def total_size() -> int:
 
 def restore(item_id: str):
     """Restore a file to its original location. Returns (ok, message)."""
-    idx = _load()
-    item = next((i for i in idx["items"] if i["id"] == item_id), None)
-    if not item:
-        return False, "Not found in quarantine."
-    stored_abs = _safe_stored(item["stored"])
-    if not stored_abs or not os.path.exists(stored_abs):
-        return False, "Quarantined file no longer exists (may have been deleted manually)."
-    os.makedirs(os.path.dirname(item["orig"]), exist_ok=True)
-    dest = item["orig"]
-    if os.path.exists(dest):
-        # original location has a new file -> do not overwrite, rename
-        dest = f"{dest}.restored_{item['id']}"
-    shutil.move(stored_abs, dest)
-    idx["items"] = [i for i in idx["items"] if i["id"] != item_id]
-    _save(idx)
-    return True, f"Restored to: {dest}"
+    with _LOCK:  # RC-1 fix
+        idx = _load()
+        item = next((i for i in idx["items"] if i["id"] == item_id), None)
+        if not item:
+            return False, "Not found in quarantine."
+        stored_abs = _safe_stored(item["stored"])
+        if not stored_abs or not os.path.exists(stored_abs):
+            return False, "Quarantined file no longer exists (may have been deleted manually)."
+        orig = os.path.abspath(item["orig"])
+        # SH-3 fix: refuse to restore into a protected system location
+        # if it has since been protected (e.g. the file originally came
+        # from a temp dir but our _PROTECTED list now covers that path).
+        try:
+            from safety import protected
+            if protected.is_protected_path(orig):
+                return False, ("Refusing to restore into a now-protected "
+                               "system location.")
+        except Exception:  # noqa: BLE001
+            pass
+        parent = os.path.dirname(orig)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        dest = orig
+        if os.path.exists(dest):
+            # original location has a new file -> do not overwrite, rename
+            dest = f"{dest}.restored_{item['id']}"
+        shutil.move(stored_abs, dest)
+        idx["items"] = [i for i in idx["items"] if i["id"] != item_id]
+        _save(idx)
+        return True, f"Restored to: {dest}"
 
 
 def delete_permanent(item_id: str):
     """Permanently delete one quarantined item."""
-    idx = _load()
-    item = next((i for i in idx["items"] if i["id"] == item_id), None)
-    if not item:
-        return False, "Not found in quarantine."
-    stored_abs = _safe_stored(item["stored"])
-    if not stored_abs:
-        return False, "Invalid path — refusing to delete outside quarantine."
-    ok, msg = _remove_path(stored_abs)
-    if not ok:
-        return False, msg
-    idx["items"] = [i for i in idx["items"] if i["id"] != item_id]
-    _save(idx)
-    return True, f"Permanently deleted: {os.path.basename(item['orig'])}"
+    with _LOCK:  # RC-1 fix
+        idx = _load()
+        item = next((i for i in idx["items"] if i["id"] == item_id), None)
+        if not item:
+            return False, "Not found in quarantine."
+        stored_abs = _safe_stored(item["stored"])
+        if not stored_abs:
+            return False, "Invalid path — refusing to delete outside quarantine."
+        ok, msg = _remove_path(stored_abs)
+        if not ok:
+            return False, msg
+        idx["items"] = [i for i in idx["items"] if i["id"] != item_id]
+        _save(idx)
+        return True, f"Permanently deleted: {os.path.basename(item['orig'])}"
 
 
 def delete_all(progress_cb=None):
@@ -227,38 +278,39 @@ def delete_all(progress_cb=None):
     progress bar); a failing callback never breaks the delete.
     """
     try:
-        idx = _load()
-        items = list(idx.get("items", []))
-        kept, failed, deleted, freed = [], [], 0, 0
-        for pos, item in enumerate(items, start=1):
-            stored_abs = _safe_stored(item.get("stored", ""))
-            if not stored_abs:
-                kept.append(item)
-                failed.append((item.get("id", "?"),
-                               os.path.basename(item.get("orig", "?")),
-                               "Invalid path — refusing to delete outside quarantine."))
-            else:
-                ok, msg = _remove_path(stored_abs)
-                if ok:
-                    deleted += 1
-                    freed += item.get("size", 0)
-                else:
+        with _LOCK:  # RC-1 fix
+            idx = _load()
+            items = list(idx.get("items", []))
+            kept, failed, deleted, freed = [], [], 0, 0
+            for pos, item in enumerate(items, start=1):
+                stored_abs = _safe_stored(item.get("stored", ""))
+                if not stored_abs:
                     kept.append(item)
                     failed.append((item.get("id", "?"),
-                                   os.path.basename(item.get("orig", "?")), msg))
-            if progress_cb is not None:
-                try:
-                    progress_cb(pos, len(items))
-                except Exception:  # noqa: BLE001
-                    pass
-        idx["items"] = kept
-        _save(idx)
-        if failed:
-            return (True,
-                    f"Destroyed {deleted} item(s), {len(failed)} failed.",
-                    {"deleted": deleted, "failed": failed, "freed": freed})
-        return (True, f"Destroyed {deleted} item(s). Quarantine is now empty.",
-                {"deleted": deleted, "failed": [], "freed": freed})
+                                   os.path.basename(item.get("orig", "?")),
+                                   "Invalid path — refusing to delete outside quarantine."))
+                else:
+                    ok, msg = _remove_path(stored_abs)
+                    if ok:
+                        deleted += 1
+                        freed += item.get("size", 0)
+                    else:
+                        kept.append(item)
+                        failed.append((item.get("id", "?"),
+                                       os.path.basename(item.get("orig", "?")), msg))
+                if progress_cb is not None:
+                    try:
+                        progress_cb(pos, len(items))
+                    except Exception:  # noqa: BLE001
+                        pass
+            idx["items"] = kept
+            _save(idx)
+            if failed:
+                return (True,
+                        f"Destroyed {deleted} item(s), {len(failed)} failed.",
+                        {"deleted": deleted, "failed": failed, "freed": freed})
+            return (True, f"Destroyed {deleted} item(s). Quarantine is now empty.",
+                    {"deleted": deleted, "failed": [], "freed": freed})
     except Exception as e:  # noqa: BLE001
         return False, f"Destroy All failed: {e}", {
             "deleted": 0, "failed": [], "freed": 0}
@@ -268,27 +320,28 @@ def purge_expired(days: int = RETENTION_DAYS):
     """Permanently delete expired items. Returns (count, freed_bytes)."""
     from datetime import timedelta
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    idx = _load()
-    kept, removed, freed = [], 0, 0
-    for item in idx["items"]:
-        try:
-            when = datetime.fromisoformat(item["quarantined_at"])
-        except Exception:
-            kept.append(item)
-            continue
-        if when < cutoff:
-            stored_abs = _safe_stored(item["stored"])
-            if not stored_abs:
+    with _LOCK:  # RC-1 fix
+        idx = _load()
+        kept, removed, freed = [], 0, 0
+        for item in idx["items"]:
+            try:
+                when = datetime.fromisoformat(item["quarantined_at"])
+            except Exception:
                 kept.append(item)
                 continue
-            ok, _msg = _remove_path(stored_abs)
-            if ok:
-                freed += item.get("size", 0)
-                removed += 1
+            if when < cutoff:
+                stored_abs = _safe_stored(item["stored"])
+                if not stored_abs:
+                    kept.append(item)
+                    continue
+                ok, _msg = _remove_path(stored_abs)
+                if ok:
+                    freed += item.get("size", 0)
+                    removed += 1
+                else:
+                    kept.append(item)
             else:
-                kept.append(item)  # delete failed -> keep + report via UI
-        else:
-            kept.append(item)
-    idx["items"] = kept
-    _save(idx)
-    return removed, freed
+                kept.append(item)
+        idx["items"] = kept
+        _save(idx)
+        return removed, freed

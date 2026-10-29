@@ -31,8 +31,11 @@ def main():
                for r in engine.rules_for(args.level)]
 
     # Chỉ dọn rule: default_on + low risk + (đủ quyền)
+    # Bug #3 fix: include action-specials (size 0 by design — they run a command).
+    # Match size>0 OR has note (DISM component cleanup, docker prune, snap prune).
     ids = {res["rule"]["id"] for res in results
-           if not res.get("error") and res["size"] > 0
+           if not res.get("error")
+           and (res["size"] > 0 or res.get("note"))
            and res["rule"].get("default_on")
            and res["rule"].get("risk") == "low"
            and (admin or not res["rule"].get("requires_admin"))}

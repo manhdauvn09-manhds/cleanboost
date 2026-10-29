@@ -167,7 +167,14 @@ def emergency_candidates(min_rss_mb: int = 200) -> list:
             continue
         if r["rss"] < min_rss_mb * 1024 * 1024:
             continue
-        if r["state"] == "block":
+        if r["state"] in ("block", "warn"):
+            # LB-1 security fix: drop BOTH 'block' (hard-protected system
+            # processes) AND 'warn' (sensitive user-facing processes such
+            # as explorer.exe / dwm.exe / ctfmon.exe on Windows) from the
+            # emergency-kill candidates. The GUI Emergency RAM dialog
+            # calls kill_process() with no confirmation per row, so a
+            # 'warn' process used to be silently killable — taking the
+            # user's shell/desktop down with no prompt.
             continue
         out.append(r)
     return out

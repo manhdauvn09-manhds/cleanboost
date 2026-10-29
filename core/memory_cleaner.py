@@ -109,6 +109,18 @@ def light_clean() -> list:
         _, m2 = purge_standby_list()
         msgs.append(m2)
     else:
-        _, m = drop_caches()
-        msgs.append(m)
+        ok, m = drop_caches()
+        if ok:
+            msgs.append(m)
+        else:
+            # Bug #10 fix: surface a friendly message instead of the bare
+            # "Root required" failure text — the README calls light clean
+            # "completely safe", so a hard "Root required" line surprised
+            # normal Linux desktop users. Tell them what to do.
+            msgs.append(
+                "Light clean on Linux needs sudo to flush kernel page "
+                "caches (drop_caches). Nothing else to do — try "
+                "'sudo python3 main.py freeram --mode light', or skip "
+                "light clean on a non-root desktop session."
+            )
     return msgs

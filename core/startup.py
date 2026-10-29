@@ -53,7 +53,7 @@ def _startup_folders():
                 "Startup folder (user)"))
         if progdata:
             folders.append((os.path.join(
-                progdata, r"Microsoft\Windows\Start Menu\Programs\StartUp"),
+                progdata, r"Microsoft\Windows\Start Menu\Programs\Startup"),
                 "Startup folder (all users)"))
     return folders
 

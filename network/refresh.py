@@ -42,10 +42,13 @@ def _verify():
     """Ping the gateway (fallback 1.1.1.1). Returns (ok, message)."""
     target = "1.1.1.1"
     try:
+        # Bug #9 fix: read the gateway directly instead of the full
+        # get_network_info() (which fetches the public IP via up to 2x3s
+        # outbound HTTP — wasted time the verify never uses).
         from network import info as net_info
-        _ok, _msg, data = net_info.get_network_info()
-        if data.get("gateway"):
-            target = data["gateway"]
+        gw = net_info._gateway()
+        if gw:
+            target = gw
     except Exception:
         pass
     if _ping_once(target, timeout=20):
@@ -217,10 +220,11 @@ def adapter_reset(adapter=None, cancel_event=None, progress_cb=None):
         # loop re-ran the full get_network_info() (incl. up to 6s of
         # Global-IP lookup) on every iteration, so "verify within ~30s"
         # really took up to ~130s.
+        # Bug #9: use the lightweight _gateway() helper instead of the
+        # full get_network_info() — same data, no 6s public-IP fetch.
         try:
             from network import info as net_info
-            _ok, _msg, _data = net_info.get_network_info()
-            gateway = _data.get("gateway", "") or "1.1.1.1"
+            gateway = net_info._gateway() or "1.1.1.1"
         except Exception:
             gateway = "1.1.1.1"
 

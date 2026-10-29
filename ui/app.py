@@ -52,6 +52,7 @@ THEMES = {
                   BTN2="#dbe3f0", BTN2_TXT="#17202f", BTN2_HOV="#c2cfe4"),
 }
 C_ACC = "#4f8cff"          # accent for graphics / text highlights
+C_ACC_HOV = "#3b78f0"       # Phase 3: hover color for accent buttons
 C_ACC_BTN = "#2563eb"      # primary button bg (white text: 5.2:1)
 C_ACC_BTN_HOV = "#1d4ed8"  # primary button hover
 C_ONCOLOR = "#ffffff"      # text on any colored button
@@ -262,6 +263,58 @@ class RingGauge(tk.Canvas):
         if subtitle:
             self.create_text(cx, cy + 38, text=subtitle,
                              fill=C_MUT, font=(FONT, 10))
+
+
+class HealthRing(tk.Canvas):
+    """Phase 3 #health: a larger radial ring for the Health Score that
+    turns GREEN / YELLOW / RED by zone and shows the score in big text.
+
+    Reusable — same pattern as RingGauge but for bounded scores
+    (0..100) instead of percentages, with a thicker ring and a softer
+    green-by-default color (higher = better, unlike CPU% where higher is
+    worse)."""
+
+    def __init__(self, parent, size=140):
+        super().__init__(parent, width=size, height=size, bg=C_CARD,
+                         highlightthickness=0)
+        self._s = size
+        self.set(None, "Press Refresh")
+
+    def set(self, score, subtitle=""):
+        self.delete("all")
+        cx, cy, r = self._s / 2, self._s / 2, self._s / 2 - 18
+        # Background ring
+        self.create_arc(cx - r, cy - r, cx + r, cy + r, start=90, extent=359.9,
+                        style="arc", outline=C_LINE, width=16)
+        if score is None:
+            self.create_text(cx, cy - 6, text="--",
+                             fill=C_TXT, font=(FONT, 28, "bold"))
+            self.create_text(cx, cy + 22, text="Health",
+                             fill=C_MUT, font=(FONT, 11))
+            if subtitle:
+                self.create_text(cx, cy + 42, text=subtitle,
+                                 fill=C_MUT, font=(FONT, 9))
+            return
+        score = max(0, min(100, score))
+        # Color zones: green for >=80, yellow 50-79, red <50. Higher = better.
+        if score >= 80:
+            color = C_GRN
+        elif score >= 50:
+            color = C_YLW
+        else:
+            color = C_RED
+        if score > 0:
+            self.create_arc(cx - r, cy - r, cx + r, cy + r, start=90,
+                            extent=-359.9 * score / 100, style="arc",
+                            outline=color, width=16)
+        self.create_text(cx, cy - 6, text=f"{score:.0f}",
+                         fill=C_TXT, font=(FONT, 28, "bold"))
+        self.create_text(cx, cy + 22, text="/ 100",
+                         fill=C_MUT, font=(FONT, 11))
+        if subtitle:
+            self.create_text(cx, cy + 42, text=subtitle,
+                             fill=color, font=(FONT, 9, "bold"))
+
 
 
 # ------------------------- dialogs -------------------------
@@ -625,12 +678,87 @@ class EmergencyDialog(ctk.CTkToplevel):
                       command=lambda: self._close(0)).pack(side="left", padx=4)
 
     def _kill(self):
-        n = 0
-        for pid, var in self._vars.items():
-            if var.get():
-                ok, _ = process_manager.kill_process(pid, force=False)
-                n += ok
-        self._close(n)
+        # Bug #4 fix: the old code ran process_manager.kill_process() per
+        # ticked app ON THE UI THREAD — each kill calls p.terminate() then
+        # p.wait(timeout=5), so with N ticked apps the whole window froze
+        # up to N*5 s ("not responding"). Now the kills run in a worker
+        # thread; we disable the buttons immediately for feedback and
+        # call back into the UI thread when done.
+        targets = [pid for pid, v in self._vars.items() if v.get()]
+        if not targets:
+            self._close(0)
+            return
+        # Disable the action buttons so the user gets immediate feedback
+        # that the kills are in flight (the previous synchronous version
+        # gave no feedback at all — the window simply froze).
+        for w in self.winfo_children():
+            try:
+                if isinstance(w, ctk.CTkButton):
+                    w.configure(state="disabled")
+            except Exception:  # noqa: BLE001
+                pass
+        progress = ctk.CTkLabel(self, text="Closing apps...",
+                                font=(FONT, 12), text_color=C_MUT)
+        progress.pack(pady=(0, 6))
+
+        def work():
+            n = 0
+            for pid in targets:
+                try:
+                    ok, _ = process_manager.kill_process(pid, force=False)
+                    n += ok
+                except Exception:  # noqa: BLE001
+                    pass
+            return n
+
+        def done(n):
+            # Don't touch a destroyed dialog's widgets.
+            try:
+                if not self.winfo_exists():
+                    return
+            except Exception:  # noqa: BLE001
+                return
+            if isinstance(n, Exception):
+                progress.configure(text=f"Error: {n}")
+            else:
+                self._close(n)
+
+        # Reuse the parent App's worker pool — do NOT spawn a raw thread
+        # here, because the dialog might be destroyed while the kills
+        # are still in flight and a raw thread would touch destroyed Tk
+        # widgets. _run_bg posts results back via the safe UI queue.
+        master_app = self._find_app()
+        if master_app is not None:
+            master_app._run_bg([], work, done=done,
+                              status="Closing apps...", quiet=True)
+        else:
+            # Fallback (no App reachable): run in a daemon thread and
+            # post back via the dialog's own after().
+            import threading as _th
+
+            def runner():
+                try:
+                    n = work()
+                except Exception as e:  # noqa: BLE001
+                    n = e
+                try:
+                    self.after(0, lambda: done(n))
+                except Exception:  # noqa: BLE001
+                    pass
+
+            _th.Thread(target=runner, daemon=True).start()
+
+    def _find_app(self):
+        """Walk up the toplevel chain to the main App instance."""
+        w = self
+        while w is not None:
+            if hasattr(w, "_run_bg") and hasattr(w, "_bg_queue"):
+                return w
+            try:
+                w = w.master
+            except Exception:  # noqa: BLE001
+                return None
+        return None
 
     def _close(self, n=0):
         self.destroy()
@@ -730,6 +858,16 @@ PAGES = [
 PAGE_ICONS = {"dash": "📊", "proc": "⚙️", "clean": "🧹", "quar": "📦",
               "net": "🌐", "startup": "🚀"}
 
+# Phase 3 (UI revamp): the sidebar is grouped into 3 sections by purpose
+# instead of a flat list of 6 nav buttons. Each entry is (group, key).
+# The labels ("MONITOR/CLEANUP/SYSTEM") render as section headers between
+# the buttons.
+PAGE_GROUPS = [
+    ("MONITOR", [("dash", "Overview"), ("proc", "Processes"), ("net", "Network")]),
+    ("CLEANUP", [("clean", "Disk Cleaner"), ("quar", "Quarantine")]),
+    ("SYSTEM", [("startup", "Startup")]),
+]
+
 
 class App(ctk.CTk):
     def __init__(self):
@@ -770,10 +908,11 @@ class App(ctk.CTk):
         self._tick_dashboard()
         self._refresh_proc()
         self._refresh_quarantine()
+        self._refresh_sidebar_badges()  # Phase 3: populate sidebar badges
 
     # ------------------------- busy guard -------------------------
-    def _run_bg(self, buttons, work, done=None, status="Working...",
-                timeout=None):
+    def _run_bg(self, buttons, work, done=None, status: "str | None" = "Working...",
+                timeout=None, quiet=False):
         """Run work() in a background thread.
 
         Disables the given buttons while running so a button can never be
@@ -794,25 +933,32 @@ class App(ctk.CTk):
         daemon and its late result is ignored, so no single hang — in
         any feature, on any machine — can lock the UI forever again.
         Always returns True — the task will run (now or after the queue).
+
+        v2.9.0 (Phase 2 #3): quiet=True skips the status bar update and
+        the button-disable dance — for fire-and-forget background samplers
+        like the dashboard tick that must not clobber the user-facing
+        status line or block real button clicks.
         """
         if timeout is None:
             timeout = self._BG_DEFAULT_TIMEOUT
-        task = (list(buttons), work, done, status, timeout)
-        for b in buttons:
-            try:
-                b.configure(state="disabled")
-            except Exception:  # noqa: BLE001
-                pass
+        task = (list(buttons), work, done, status, timeout, quiet)
+        if not quiet:
+            for b in buttons:
+                try:
+                    b.configure(state="disabled")
+                except Exception:  # noqa: BLE001
+                    pass
         if self._busy:
             self._bg_queue.append(task)
-            # v2.8.0: a queued click used to show NOTHING — the button
-            # just sat disabled, which users read as "the button died".
-            # Name the queued task; the running task's tick (below)
-            # also lists the queue from now on.
-            self._set_status(
-                f"Queued: {status} — waiting for the current task")
+            if not quiet and status:
+                # v2.8.0: a queued click used to show NOTHING — the button
+                # just sat disabled, which users read as "the button died".
+                # Name the queued task; the running task's tick (below)
+                # also lists the queue from now on.
+                self._set_status(
+                    f"Queued: {status} — waiting for the current task")
             return True
-        self._start_bg(*task)
+        self._start_bg(*task)  # _start_bg takes all 6 (incl. quiet)
         return True
 
     # Default hard limit per background task (v2.7.0). Long jobs pass
@@ -821,14 +967,16 @@ class App(ctk.CTk):
     # A task still running after this long is probably stuck (v2.6.1).
     _BG_WARN_SECONDS = 15 * 60
 
-    def _start_bg(self, buttons, work, done, status, timeout):
+    def _start_bg(self, buttons, work, done, status, timeout, quiet=False):
         self._busy = True
-        self._set_status(status)
+        if not quiet:
+            self._set_status(status)
         self._bg_task_id = getattr(self, "_bg_task_id", 0) + 1
         tid = self._bg_task_id
         self._bg_current = (tid, list(buttons))
         t0 = time.time()
-        action_log.log("bg_task_start", {"task": status, "id": tid})
+        if not quiet:
+            action_log.log("bg_task_start", {"task": status, "id": tid})
         # v2.7.0: the worker thread NEVER touches Tk. It only stores
         # its result here and sets the event; the UI thread polls.
         holder = {"event": threading.Event(), "result": None}
@@ -847,10 +995,10 @@ class App(ctk.CTk):
 
         threading.Thread(target=runner, daemon=True).start()
         self._bg_poll(tid, t0, buttons, done, status, timeout, holder,
-                      warned=False, last_sec=-1)
+                      warned=False, last_sec=-1, quiet=quiet)
 
     def _bg_poll(self, tid, t0, buttons, done, status, timeout, holder,
-                 warned, last_sec):
+                 warned, last_sec, quiet=False):
         """UI-thread poll for the running task (v2.7.0, replaces calling
         after() from the worker thread — see _post_ui): finish when the
         worker posts its result, abandon at the timeout, tick the
@@ -867,7 +1015,7 @@ class App(ctk.CTk):
             self._abandon_bg(tid, status, timeout)
             return
         sec = int(elapsed)
-        if sec != last_sec:
+        if sec != last_sec and not quiet:
             last_sec = sec
             mm, ss = sec // 60, sec % 60
             # v2.8.0: the tick also names queued work, so the status
@@ -875,7 +1023,8 @@ class App(ctk.CTk):
             queued = ""
             if self._bg_queue:
                 queued = (" | Queued: "
-                          + "; ".join(t[3] for t in self._bg_queue))
+                          + "; ".join(t[3] for t in self._bg_queue
+                                      if t[3]))
             self._set_status(f"{status} - {mm:02d}:{ss:02d}{queued}")
             if elapsed >= self._BG_WARN_SECONDS and not warned:
                 warned = True
@@ -888,7 +1037,7 @@ class App(ctk.CTk):
                                 "seconds": int(elapsed)})
         self.after(100, lambda: self._bg_poll(
             tid, t0, buttons, done, status, timeout, holder, warned,
-            last_sec))
+            last_sec, quiet=quiet))
 
     def _drain_ui_queue(self):
         """Execute callbacks posted from worker threads (v2.7.0)."""
@@ -960,50 +1109,35 @@ class App(ctk.CTk):
             except Exception as e:  # noqa: BLE001
                 # A failing done() must not stall the queue or leave
                 # the app silent — report it and keep going.
-                self._set_status(f"Error: {e}")
-        # A done() may itself have started a new task (nested _run_bg);
-        # only drain the queue when nothing is running now.
-        if self._bg_queue and not self._busy:
-            self._start_bg(*self._bg_queue.pop(0))
+                self._set_status(f"Error: {e}", auto_clear=5000)
 
-    def _set_status(self, text):
-        try:
-            self.status_lbl.configure(text=text)
-        except Exception:  # noqa: BLE001
-            pass
+    @staticmethod
+    def _crash_log_path_local():
+        """Compute the crash-log path WITHOUT importing gui (Bug UX #3).
 
-    def report_callback_exception(self, exc, val, tb):
-        """Tkinter calls this when a button/menu callback raises (v2.7.1).
-
-        Default Tk behavior prints to stderr — invisible under
-        pythonw.exe, which is how a broken button produced a zombie
-        dialog with no error shown. Now: log it AND show it, so a
-        failing feature can never die silently again.
+        Mirrors gui._crash_log_path but lives here so a broken gui.py
+        import cannot kill the safety net.
         """
+        if sys.platform == "win32":
+            base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+            d = os.path.join(base, "CleanBoost")
+        else:
+            d = os.path.join(os.path.expanduser("~"),
+                             ".config", "cleanboost")
         try:
-            import traceback
-            text = "".join(traceback.format_exception(exc, val, tb))
-            action_log.log("ui_callback_error",
-                           {"exc": f"{exc.__name__}: {val}"})
-            try:
-                from gui import _crash_log_path
-                with open(_crash_log_path(), "a", encoding="utf-8") as f:
-                    f.write(text + "\n")
-            except Exception:  # noqa: BLE001
-                pass
-            from tkinter import messagebox
-            messagebox.showerror(
-                "Unexpected error",
-                f"{exc.__name__}: {val}\n\n"
-                "The action did not complete. Details were written to "
-                "the error log (see the status bar for its location).",
-                parent=self)
-        except Exception:  # noqa: BLE001
+            os.makedirs(d, exist_ok=True)
+        except OSError:
             pass
+        return os.path.join(d, "crash.log")
 
     # ------------------------- shell -------------------------
     def _build_sidebar(self):
-        sb = ctk.CTkFrame(self, fg_color=C_SIDEBAR, corner_radius=0, width=210)
+        # Phase 3 UI revamp: sidebar grouped into 3 sections (MONITOR /
+        # CLEANUP / SYSTEM) instead of a flat 6-button column. Each
+        # section uses a muted label header. Some buttons get a numeric
+        # "badge" label (quarantine item count, process count) that is
+        # refreshed lazily by _refresh_sidebar_badges().
+        sb = ctk.CTkFrame(self, fg_color=C_SIDEBAR, corner_radius=0, width=216)
         sb.pack(side="left", fill="y")
         sb.pack_propagate(False)
 
@@ -1024,15 +1158,36 @@ class App(ctk.CTk):
         ctk.CTkLabel(txt, text="PRO", font=(FONT, 11),
                      text_color=C_MUT, anchor="w").pack(anchor="w")
 
-        for key, label in PAGES:
-            icon = PAGE_ICONS[key]
-            b = ctk.CTkButton(sb, text=f"  {icon}  {label}", anchor="w",
-                              fg_color="transparent", text_color=C_TXT,
-                              hover_color=C_BTN2_HOV, font=(FONT, 13),
-                              height=42,
-                              command=lambda k=key: self._show_page(k))
-            b.pack(fill="x", padx=10, pady=3)
-            self._nav_btns[key] = b
+        # Group container that we'll refresh badge labels inside.
+        self._sidebar_container = ctk.CTkFrame(sb, fg_color="transparent")
+        self._sidebar_container.pack(fill="x", padx=6, pady=(6, 0))
+        self._sidebar_badges = {}   # key -> CTkLabel that holds the badge text
+        for grp, entries in PAGE_GROUPS:
+            hdr = ctk.CTkLabel(
+                self._sidebar_container, text=grp,
+                font=(FONT, 9, "bold"),
+                text_color=C_MUT, anchor="w")
+            hdr.pack(fill="x", padx=(14, 0), pady=(8, 2))
+            for key, label in entries:
+                icon = PAGE_ICONS[key]
+                row = ctk.CTkFrame(self._sidebar_container,
+                                   fg_color="transparent")
+                row.pack(fill="x", pady=2)
+                b = ctk.CTkButton(
+                    row, text=f"  {icon}  {label}", anchor="w",
+                    fg_color="transparent", text_color=C_TXT,
+                    hover_color=C_BTN2_HOV, font=(FONT, 13),
+                    height=38,
+                    command=lambda k=key: self._show_page(k))
+                b.pack(side="left", fill="x", expand=True)
+                # The badge label sits to the right; its text is refreshed
+                # lazily — only the quarantine badge starts non-empty.
+                badge = ctk.CTkLabel(row, text="", font=(FONT, 9, "bold"),
+                                     text_color=C_MUT, anchor="center",
+                                     width=28)
+                badge.pack(side="right", padx=(0, 6))
+                self._nav_btns[key] = b
+                self._sidebar_badges[key] = badge
 
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
         ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
@@ -1044,12 +1199,40 @@ class App(ctk.CTk):
         main = ctk.CTkFrame(self, fg_color=C_BG, corner_radius=0)
         main.pack(side="left", fill="both", expand=True)
 
-        # topbar
+        # topbar — Phase 3 revamp: page title (left) + global search +
+        # Optimize 1-Click button + help/theme (right).
         top = ctk.CTkFrame(main, fg_color=C_BG, height=58)
         top.pack(fill="x", padx=20, pady=(14, 0))
         top.pack_propagate(False)
         self.page_title = ctk.CTkLabel(top, text="", font=(FONT, 19, "bold"))
         self.page_title.pack(side="left")
+
+        # Global search (Phase 3 #search): jump to a tab + filter rows.
+        srch = ctk.CTkFrame(top, fg_color=C_BTN2, corner_radius=10,
+                            height=34)
+        srch.pack(side="left", padx=(16, 0))
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write",
+                                  lambda *_: self._on_search_changed())
+        search_entry = ctk.CTkEntry(
+            srch, textvariable=self.search_var, width=220, height=34,
+            border_width=0, fg_color="transparent",
+            placeholder_text="Search processes, rules, items...",
+            font=(FONT, 12))
+        search_entry.pack(side="left", padx=8)
+        ctk.CTkLabel(srch, text="🔍", font=(FONT, 14),
+                     text_color=C_MUT).pack(side="left", padx=(4, 8))
+
+        # Optimize 1-Click global button (Phase 3 #opt). PRIMARY action —
+        # always visible, runs the full RAM+clean+refresh+ping sweep.
+        self.opt_btn = ctk.CTkButton(
+            top, text="⚡  Optimize 1-Click", width=170, height=34,
+            font=(FONT, 13, "bold"),
+            fg_color=C_ACC, text_color="#ffffff",
+            hover_color=C_ACC_HOV,
+            command=self._optimize_all)
+        self.opt_btn.pack(side="right", padx=(6, 0))
+
         help_btn = ctk.CTkButton(top, text="?", width=34, height=34,
                                  font=(FONT, 15, "bold"), fg_color=C_BTN2,
                                  text_color=C_BTN2_TXT,
@@ -1096,11 +1279,127 @@ class App(ctk.CTk):
         self.status_lbl.pack(side="left", padx=16)
         self._tick_status()
 
+        # Phase 3 #toast: a small overlay that surfaces action results
+        # (kill done, clean done, ...) and auto-hides after 5s, instead
+        # of permanent label text that is easy to mistake for stale info.
+        self._toast_frame = ctk.CTkFrame(main, fg_color=C_CARD,
+                                         corner_radius=12,
+                                         border_width=1,
+                                         border_color=C_LINE)
+        self._toast_frame.place(relx=1.0, rely=1.0,
+                                anchor="se", x=-20, y=-50, relwidth=0.32)
+        self._toast_frame.place_forget()
+        self._toast_label = ctk.CTkLabel(self._toast_frame, text="",
+                                          font=(FONT, 12), anchor="w",
+                                          justify="left", wraplength=380)
+        self._toast_label.pack(anchor="w", padx=14, pady=10)
+        self._toast_after_id = None
+
+    def show_toast(self, message, ms=5000):
+        """Phase 3 #toast: surface an action result as an auto-hiding
+        hover overlay in the bottom-right corner."""
+        try:
+            self._toast_label.configure(text=message)
+            self._toast_frame.place(relx=1.0, rely=1.0,
+                                     anchor="se", x=-20, y=-50,
+                                     relwidth=0.32)
+        except Exception:  # noqa: BLE001
+            return
+        if self._toast_after_id is not None:
+            try:
+                self.after_cancel(self._toast_after_id)
+            except Exception:  # noqa: BLE001
+                pass
+        self._toast_after_id = self.after(
+            ms, lambda: self._hide_toast())
+
+    def _hide_toast(self):
+        try:
+            self._toast_frame.place_forget()
+        except Exception:  # noqa: BLE001
+            pass
+        self._toast_after_id = None
+
+    def _refresh_sidebar_badges(self):
+        """Phase 3: refresh the numeric badges on the sidebar buttons.
+        Runs in a worker because Q.list_items() etc. may touch disk."""
+        def work():
+            badges = {}
+            try:
+                badges["quar"] = len(Q.list_items())
+            except Exception:  # noqa: BLE001
+                badges["quar"] = 0
+            try:
+                badges["proc"] = len(process_manager.list_processes())
+            except Exception:  # noqa: BLE001
+                badges["proc"] = 0
+            return badges
+
+        def done(badges):
+            if isinstance(badges, Exception):
+                return
+            for key, badge in self._sidebar_badges.items():
+                n = badges.get(key, 0)
+                txt = str(n) if n else ""
+                try:
+                    badge.configure(
+                        text=txt,
+                        text_color=C_RED if n and key == "quar" else C_MUT)
+                except Exception:  # noqa: BLE001
+                    pass
+
+        self._run_bg([], work, done=done, status=None, quiet=True)
+
+    def _on_search_changed(self):
+        """Phase 3 #search: filter rows on the current page for terms
+        typed into the global search bar. Currently drives the
+        Processes and Quarantine tables; future tabs can subscribe."""
+        q = self.search_var.get().strip().lower()
+        # Apply to the visible page only.
+        for key, (w, _label) in self._pages.items():
+            if not w.winfo_ismapped():
+                continue
+            if key == "proc" and hasattr(self, "proc_tree"):
+                tree = self.proc_tree
+                for iid in tree.get_children():
+                    name = (tree.item(iid, "text") or "").lower()
+                    tags = " ".join(str(t) for t in
+                                    (tree.item(iid, "values") or [])).lower()
+                    # RG-1 fix: ttk.Treeview.reattach = move(item, parent,
+                    # INDEX) — index is required (no default). "" → TypeError
+                    # per keystroke, swallowed by Tk = silent search failure.
+                    if q in name or q in tags:
+                        tree.move(iid, "", "end")
+                    else:
+                        tree.detach(iid)
+            elif key == "quar" and hasattr(self, "quar_tree"):
+                tree = self.quar_tree
+                for iid in tree.get_children():
+                    name = (tree.item(iid, "text") or "").lower()
+                    tags = " ".join(str(t) for t in
+                                    (tree.item(iid, "values") or [])).lower()
+                    if q in name or q in tags:
+                        tree.move(iid, "", "end")
+                    else:
+                        tree.detach(iid)
+
     def _toggle_theme(self):
+        # Bug #6 fix: do NOT destroy() the App — it drops all in-flight
+        # state (scan results, quarantine selection, hogs table, speed
+        # before/after). ctk.set_appearance_mode() (called inside
+        # set_theme) already re-colors every CustomTkinter widget live,
+        # so toggling without destroy keeps the user's state intact.
         new = "light" if C_BG == THEMES["dark"]["BG"] else "dark"
         set_theme(new)
+        # Repaint the toplevel surface so any literal-C_* widgets still
+        # track the new theme without rebuilding the whole App.
+        try:
+            self.configure(fg_color=C_BG)
+        except Exception:  # noqa: BLE001
+            pass
+        # Keep _next_theme for back-compat with tests and the main()
+        # rebuild loop; it's just no longer the only theme path now.
         self._next_theme = new
-        self.destroy()
 
     def _show_page(self, key):
         for k, b in self._nav_btns.items():
@@ -1121,6 +1420,12 @@ class App(ctk.CTk):
         if key == "net" and not getattr(self, "_net_loaded", False):
             if self._refresh_network_all():
                 self._net_loaded = True
+            # Bug #5 fix: load the current DNS on first Network-tab visit
+            # too. The DNS Switcher used to read "Current DNS: -" until the
+            # user changed DNS once, because _refresh_dns_current was only
+            # ever called as the done-callback of a change.
+            if hasattr(self, "dns_current_lbl"):
+                self._refresh_dns_current()
         if key == "startup" and not getattr(self, "_startup_loaded", False):
             self._startup_loaded = True
             self._refresh_startup()
@@ -1192,20 +1497,34 @@ class App(ctk.CTk):
 
         h1 = ctk.CTkFrame(hrow, fg_color=C_CARD, corner_radius=12)
         h1.pack(side="left", fill="both", expand=True, padx=(0, 8))
-        ctk.CTkLabel(h1, text="Health Score",
-                     font=(FONT, 14, "bold"), anchor="w").pack(anchor="w", padx=16, pady=(14, 2))
-        self.health_score_lbl = ctk.CTkLabel(h1, text="-- / 100",
-                                             font=(FONT, 22, "bold"), text_color=C_ACC,
-                                             anchor="w")
-        self.health_score_lbl.pack(anchor="w", padx=16)
-        self.health_break_lbl = ctk.CTkLabel(h1, text="Press Refresh to calculate.",
-                                             font=(FONT, 11), text_color=C_MUT, wraplength=380,
+        # Phase 3 #health: layout = ring (left) + score text + breakdown
+        # (right). The ring gives an at-a-glance green/yellow/red signal
+        # the old "22pt number" alone didn't.
+        h_top = ctk.CTkFrame(h1, fg_color="transparent")
+        h_top.pack(fill="x", padx=16, pady=(14, 2))
+        ctk.CTkLabel(h_top, text="Health Score",
+                     font=(FONT, 14, "bold"), anchor="w").pack(anchor="w")
+        h_visual = ctk.CTkFrame(h1, fg_color="transparent")
+        h_visual.pack(fill="x", padx=8)
+        self.health_ring = HealthRing(h_visual, size=120)
+        self.health_ring.pack(side="left", padx=(8, 12), pady=(0, 4))
+        h_text = ctk.CTkFrame(h_visual, fg_color="transparent")
+        h_text.pack(side="left", fill="x", expand=True)
+        self.health_score_lbl = ctk.CTkLabel(h_text, text="-- / 100",
+                                             font=(FONT, 22, "bold"),
+                                             text_color=C_ACC, anchor="w")
+        self.health_score_lbl.pack(anchor="w")
+        self.health_break_lbl = ctk.CTkLabel(h_text,
+                                             text="Press Refresh to calculate.",
+                                             font=(FONT, 11),
+                                             text_color=C_MUT,
+                                             wraplength=380,
                                              justify="left", anchor="w")
-        self.health_break_lbl.pack(anchor="w", padx=16, pady=(0, 6))
-        self.health_suggest_lbl = ctk.CTkLabel(h1, text="", font=(FONT, 11),
+        self.health_break_lbl.pack(anchor="w", pady=(4, 6))
+        self.health_suggest_lbl = ctk.CTkLabel(h_text, text="", font=(FONT, 11),
                                                text_color=C_TXT, wraplength=380,
                                                justify="left", anchor="w")
-        self.health_suggest_lbl.pack(anchor="w", padx=16, pady=(0, 10))
+        self.health_suggest_lbl.pack(anchor="w", pady=(0, 8))
         self.health_refresh_btn = ctk.CTkButton(h1, text="Refresh Health Score",
                                                 fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                                                 command=self._refresh_health)
@@ -1273,36 +1592,56 @@ class App(ctk.CTk):
         self.dash_msg.pack(anchor="w", pady=(10, 0))
 
     def _tick_dashboard(self):
-        try:
+        # Bug #3 fix: the old code called system_info.cpu_percent() (which
+        # does psutil.cpu_percent(interval=0.5) — a 0.5s BLOCKING call) on
+        # the Tk UI thread, freezing the window ~0.5s every 2s. Now the
+        # sampling runs in a background worker and the UI is updated via
+        # _post_ui; the next tick is scheduled AFTER the result lands so
+        # ticks never overlap.
+        def work():
             mem = system_info.memory()
             cpu = system_info.cpu_percent()
             root = "C:\\" if sys.platform == "win32" else "/"
             disk = system_info.disk(root)
-            self.g_ram.set(mem["percent"], f"{mem['used']/GB:.1f}/{mem['total']/GB:.1f} GB")
-            self.g_cpu.set(min(cpu, 100), "")
-            self.g_disk.set(disk["percent"], f"{100-disk['percent']:.0f}% free")
-            warns = []
-            if mem["percent"] >= 90:
-                warns.append(f"RAM is {mem['percent']:.0f}% full — free some RAM!")
-            if 100 - disk["percent"] <= 10:
-                warns.append(f"Disk only {100-disk['percent']:.0f}% free — clean junk files!")
-            if warns:
-                self.d_banner.configure(text="WARNING: " + "  |  ".join(warns))
-                self.d_banner.pack(fill="x", pady=(0, 8), before=self.g_ram.master)
-            else:
-                self.d_banner.pack_forget()
-        except Exception:  # noqa: BLE001
-            pass
-        # v2.7.0: refresh the Top-10 panel every ~20s while Overview is
-        # on screen and nothing else is running.
-        self._dash_ticks = getattr(self, "_dash_ticks", 0) + 1
-        if self._dash_ticks % 10 == 0 and not self._busy:
+            return mem, cpu, disk
+
+        def done(res):
+            if getattr(self, "_closing", False):
+                return
+            if isinstance(res, Exception):
+                # Don't kill the dashboard on a transient sample error —
+                # just reschedule and try again next tick.
+                self.after(2000, self._tick_dashboard)
+                return
+            mem, cpu, disk = res
             try:
-                if self._pages["dash"][0].winfo_ismapped():
-                    self._refresh_top()
+                self.g_ram.set(mem["percent"], f"{mem['used']/GB:.1f}/{mem['total']/GB:.1f} GB")
+                self.g_cpu.set(min(cpu, 100), "")
+                self.g_disk.set(disk["percent"], f"{100-disk['percent']:.0f}% free")
+                warns = []
+                if mem["percent"] >= 90:
+                    warns.append(f"RAM is {mem['percent']:.0f}% full — free some RAM!")
+                if 100 - disk["percent"] <= 10:
+                    warns.append(f"Disk only {100-disk['percent']:.0f}% free — clean junk files!")
+                if warns:
+                    self.d_banner.configure(text="WARNING: " + "  |  ".join(warns))
+                    self.d_banner.pack(fill="x", pady=(0, 8), before=self.g_ram.master)
+                else:
+                    self.d_banner.pack_forget()
             except Exception:  # noqa: BLE001
                 pass
-        self.after(2000, self._tick_dashboard)
+            # v2.7.0: refresh the Top-10 panel every ~20s while Overview is
+            # on screen and nothing else is running.
+            self._dash_ticks = getattr(self, "_dash_ticks", 0) + 1
+            if self._dash_ticks % 10 == 0 and not self._busy:
+                try:
+                    if self._pages["dash"][0].winfo_ismapped():
+                        self._refresh_top()
+                except Exception:  # noqa: BLE001
+                    pass
+            self.after(2000, self._tick_dashboard)
+
+        self._run_bg([], work, done=done, status=None, quiet=True)
 
     def _light(self):
         self.dash_msg.configure(text="")
@@ -1405,6 +1744,11 @@ class App(ctk.CTk):
                 self.health_break_lbl.configure(text=_msg)
                 return
             self.health_score_lbl.configure(text=f"{data['score']} / 100")
+            # Phase 3 #health: update the ring too.
+            try:
+                self.health_ring.set(data["score"], "")
+            except Exception:  # noqa: BLE001
+                pass
             self.health_break_lbl.configure(text=health_mod.format_health(data))
             self.health_suggest_lbl.configure(
                 text=" | ".join(data["suggestions"]))
@@ -1430,16 +1774,25 @@ class App(ctk.CTk):
             self.opt_prog.set(0)
             if isinstance(res, Exception):
                 self.opt_msg.configure(text=f"Error: {res}")
+                self.show_toast(f"Optimize failed: {res}")
                 return
             ok, msg, report = res
             self.opt_msg.configure(text=msg)
             if ok:
                 ResultDialog(self, "Optimize finished",
                              optimizer.format_report(report))
+                self.show_toast(f"Optimize finished — RAM freed {report.get('ram_freed_mb', 0):.0f} MB")
                 self._refresh_quarantine()
+                self._refresh_sidebar_badges()
 
         self._run_bg([self.optimize_btn], work, done=done,
                      status="Optimizing...", timeout=900)
+
+    def _optimize_all(self):
+        """Phase 3: global Optimize 1-Click button on the topbar. Calls
+        the same _optimize pipeline that the dashboard button uses, so
+        there's exactly one optimize code path."""
+        self._optimize()
 
     # ------------------------- Processes page -------------------------
     def _build_processes(self, page):
@@ -1663,6 +2016,8 @@ class App(ctk.CTk):
             # then set the result message so it actually stays visible.
             self._refresh_proc()
             self.p_msg.configure(text=" ".join(parts))
+            self.show_toast(" ".join(parts), ms=4000)
+            self._refresh_sidebar_badges()  # Phase 3: refresh proc count
 
         # v2.8.0: the status bar names WHAT is being closed, not just
         # "Closing processes...".
@@ -1773,7 +2128,12 @@ class App(ctk.CTk):
             rule = res["rule"]
             if res.get("error"):
                 continue
-            if res["size"] == 0 and res["count"] == 0:
+            # Bug #1 fix: do NOT skip action-specials (DISM / Docker prune /
+            # Snap prune) — they return size 0 / count 0 by design (they run
+            # a command instead of deleting measured files). Show them when
+            # they are enabled for this OS so the user can tick & run them.
+            is_special = bool(res.get("note")) and res["size"] == 0
+            if res["size"] == 0 and res["count"] == 0 and not is_special:
                 continue
             shown += 1
             var = tk.BooleanVar(value=bool(rule.get("default_on")))
@@ -1790,15 +2150,21 @@ class App(ctk.CTk):
                 name += "  [HIGH RISK]"
             elif rule.get("risk") == "medium":
                 name += "  [caution]"
+            if is_special:
+                name += "  [ACTION]"
             ctk.CTkLabel(top, text=name, font=(FONT, 12, "bold"),
                          wraplength=520, justify="left").pack(side="left")
-            ctk.CTkLabel(top, text=_fmt_gb(res["size"]), font=(FONT, 13, "bold"),
+            size_label = "— (action)" if is_special else _fmt_gb(res["size"])
+            ctk.CTkLabel(top, text=size_label, font=(FONT, 13, "bold"),
                          text_color=C_ACC).pack(side="right", padx=(8, 0))
             ctk.CTkButton(top, text="Details", width=80, height=28,
                           fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                           command=lambda r=res: DetailDialog(self, r)).pack(side="right")
 
             impact_txt = rule.get("impact", "")
+            if is_special and res.get("note"):
+                # For action-specials, lead with the note (what command runs).
+                impact_txt = (res["note"] + ("  " + impact_txt if impact_txt else ""))
             if res.get("truncated"):
                 impact_txt += " (File list capped at 200,000 for performance.)"
             ctk.CTkLabel(card, text=impact_txt, font=(FONT, 11),
@@ -1880,9 +2246,20 @@ class App(ctk.CTk):
         if isinstance(summary, Exception):
             from tkinter import messagebox
             messagebox.showerror("Error", f"Cleanup failed: {summary}", parent=self)
+            self.show_toast(f"Cleanup failed: {summary}", ms=6000)
             return
         ResultDialog(self, "Cleanup finished", fmt_summary(summary))
         self._refresh_quarantine()
+        self._refresh_sidebar_badges()
+        # Phase 3: toast the freed-space result instead of leaving the
+        # status bar to be silently overwritten by the next tick.
+        try:
+            freed = summary.get("freed", 0) if isinstance(summary, dict) else 0
+            self.show_toast(
+                f"Cleanup finished — freed {_fmt_size(freed)}.",
+                ms=5000)
+        except Exception:  # noqa: BLE001
+            pass
         for w in self.c_results.winfo_children():
             w.destroy()
         self._scan_checks = {}
@@ -2169,7 +2546,11 @@ class App(ctk.CTk):
                 messagebox.showinfo("Destroy All",
                                     f"{msg}\nFreed: {_fmt_size(summary.get('freed', 0))}.",
                                     parent=self)
+            self.show_toast(
+                f"Destroy All — freed {_fmt_size(summary.get('freed', 0))}.",
+                ms=5000)
             self._refresh_quarantine()
+            self._refresh_sidebar_badges()
 
         self._q_prog_set(0)
         self._run_bg(self._q_buttons, work, done=done,
@@ -2178,17 +2559,29 @@ class App(ctk.CTk):
 
     # ------------------------- Network page (v2.4) -------------------------
     def _build_network(self, page):
-        # v2.6.0: 4 subtabs instead of one long scroll - every job has
-        # its own place, so you never hunt through the whole tab.
+        # Phase 3 (#net accordion): collapse the 4 hard tabs into a labeled
+        # accordion-style section header so the user always sees what each
+        # group does at once. We keep the CTkTabview (it handles focus and
+        # keyboard nav well) but add a clearer tab caption above it with
+        # ICON + purpose, replacing the old one-line hint.
         header = ctk.CTkFrame(page, fg_color="transparent")
         header.pack(fill="x", pady=(0, 6))
-        ctk.CTkLabel(header, text="Overview = see  \u2022  Test = measure  \u2022  Fix = DNS & Refresh  \u2022  Repair = broken connection",
-                     text_color=C_MUT, font=(FONT, 12), anchor="w").pack(side="left")
+        ctk.CTkLabel(
+            header,
+            text=(
+                "📊 Overview = see info/ports   •  ⚡ Test = speed + diagnostics + hogs   "
+                "•  🔄 DNS & Refresh = change DNS / flush caches   "
+                "•  🛠 Repair = adapter / deep reset (Windows only)"
+            ),
+            text_color=C_MUT, font=(FONT, 12), anchor="w",
+            wraplength=900, justify="left"
+        ).pack(side="left", fill="x")
         ctk.CTkButton(header, text="Guide", width=90,
                       fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                       command=self._open_network_guide).pack(side="right")
         tabs = ctk.CTkTabview(page)
         tabs.pack(fill="both", expand=True)
+        # Phase 3: rename tabs to clearer purpose-first labels.
         tabs.add("Overview")
         tabs.add("Test & Diagnose")
         tabs.add("DNS & Refresh")
@@ -2458,6 +2851,24 @@ class App(ctk.CTk):
                                       justify="left", anchor="w")
         self.reset_msg.pack(anchor="w", pady=(0, 8))
 
+        # Phase 3 platform-gate: Adapter Reset / Deep Reset are Windows-only
+        # (netsh winsock / ip reset). On other OSes the buttons used to be
+        # clickable and then produced "requires Windows" — confusing.
+        if sys.platform != "win32":
+            for b in (self.adapter_reset_btn, self.deep_reset_btn):
+                b.configure(state="disabled")
+            ctk.CTkLabel(
+                scroll,
+                text=(
+                    "Adapter / Deep Reset are Windows-only — they run "
+                    "'netsh winsock reset' and similar. On Linux/macOS "
+                    "use 'systemctl restart NetworkManager' or "
+                    "'sudo ifconfig <iface> down && up'."
+                ),
+                text_color=C_YLW, font=(FONT, 11, "italic"),
+                wraplength=900, justify="left", anchor="w"
+            ).pack(anchor="w", pady=(4, 0))
+
     def _refresh_network_all(self):
         """First-visit Network load: info + ports in ONE task (v2.5.5).
 
@@ -2484,12 +2895,12 @@ class App(ctk.CTk):
             self._net_info_done(info)
             self._net_ports_done(ports)
 
-        started = self._run_bg([self.net_info_btn, self.net_ports_btn],
-                               work, done=done, status="Loading network...")
-        if not started:
-            self.net_info_msg.configure(text="Busy — please try again.")
-            self.net_ports_msg.configure(text="Busy — please try again.")
-        return bool(started)
+        # _run_bg always returns True (queue-now); the dead "if not started"
+        # branch (Phase 2 UX fix) could never fire and misled readers into
+        # thinking there was a busy-fallback that did nothing.
+        self._run_bg([self.net_info_btn, self.net_ports_btn],
+                     work, done=done, status="Loading network...")
+        return True
 
     def _net_info_done(self, res):
         if isinstance(res, Exception):
@@ -2528,11 +2939,9 @@ class App(ctk.CTk):
         def done(res):
             self._net_info_done(res)
 
-        if not self._run_bg([self.net_info_btn], work, done=done,
-                            status="Loading network info..."):
-            # Busy-guard dropped the task — never leave "Loading..."
-            # stuck on screen (v2.5.5).
-            self.net_info_msg.configure(text="Busy — please try again.")
+        # _run_bg always returns True (queue-now); dead branch removed.
+        self._run_bg([self.net_info_btn], work, done=done,
+                     status="Loading network info...")
 
     def _refresh_ports(self):
         self.net_ports_msg.configure(text="Loading...")
@@ -2545,9 +2954,9 @@ class App(ctk.CTk):
         def done(res):
             self._net_ports_done(res)
 
-        if not self._run_bg([self.net_ports_btn], work, done=done,
-                            status="Listing ports..."):
-            self.net_ports_msg.configure(text="Busy — please try again.")
+        # _run_bg always returns True (queue-now); dead branch removed.
+        self._run_bg([self.net_ports_btn], work, done=done,
+                     status="Listing ports...")
 
     def _port_guide(self):
         sel = self.net_port_tree.selection()
@@ -3052,6 +3461,25 @@ class App(ctk.CTk):
         self.s_enable_btn.pack(side="left")
         self.s_msg = ctk.CTkLabel(page, text="", text_color=C_MUT, font=(FONT, 12))
         self.s_msg.pack(anchor="w", pady=(8, 0))
+
+        # Phase 3 platform-gate: the Startup tab is Windows-only — on
+        # Linux/macOS the buttons used to be clickable and then returned
+        # "requires Windows" after the click. Disable them up front with
+        # an explanatory banner so the user isn't left guessing.
+        if sys.platform != "win32":
+            for b in (self.s_refresh_btn, self.s_disable_btn,
+                      self.s_enable_btn):
+                b.configure(state="disabled")
+            ctk.CTkLabel(
+                page,
+                text=(
+                    "Startup management is Windows-only — on this OS there is "
+                    "nothing to list. (Linux/macOS apps manage their own "
+                    "auto-start through systemd / launchd / XDG autostart.)"
+                ),
+                text_color=C_YLW, font=(FONT, 11, "italic"),
+                wraplength=900, justify="left", anchor="w"
+            ).pack(anchor="w", pady=(8, 0))
 
     def _refresh_startup(self):
         self.s_msg.configure(text="Loading...")

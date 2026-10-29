@@ -152,11 +152,15 @@ def cmd_clean(args):
         rule = res["rule"]
         print(f"  [{i}] {rule['name']} — {res['count']} file, {fmt_gb(res['size'])}")
     if args.all:
-        ids = {res["rule"]["id"] for res in indexed if res["size"] > 0}
+        # Bug #2 fix: include action-specials (size 0 by design — they run a
+        # command, not delete measured files). Match if size>0 OR has note.
+        ids = {res["rule"]["id"] for res in indexed
+              if res["size"] > 0 or res.get("note")}
     else:
-        ans = input("Enter numbers to clean (separated by spaces), or 'all': ").strip()
+        ans = input("Enter numbers to clean (separated by spaces), or 'all'): ").strip()
         if ans.lower() == "all":
-            ids = {res["rule"]["id"] for res in indexed if res["size"] > 0}
+            ids = {res["rule"]["id"] for res in indexed
+                  if res["size"] > 0 or res.get("note")}
         else:
             picks = {int(x) for x in ans.split() if x.isdigit()}
             ids = {indexed[i - 1]["rule"]["id"] for i in picks

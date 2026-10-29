@@ -99,6 +99,14 @@ def _remove_windows():
 def _install_linux():
     root = _root()
     py = os.path.join(root, ".venv", "bin", "python")
+    script = os.path.join(root, "auto_clean.py")
+    # Bug #8 fix: mirror the Windows guard — never write a cron line pointing
+    # at a non-existent interpreter (the weekly job would silently fail).
+    if not os.path.exists(py):
+        return False, ("No .venv yet — run:  python3 -m venv .venv  &&  "
+                       ".venv/bin/pip install -r requirements.txt")
+    if not os.path.exists(script):
+        return False, "Missing auto_clean.py in the project root."
     line = (f"0 3 * * 0 {py} {root}/auto_clean.py "
             f">> {root}/auto_clean.log 2>&1")
     try:
