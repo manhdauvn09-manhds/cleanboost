@@ -5,7 +5,6 @@ Run:  python -m unittest discover -s tests -v
 """
 import sys
 import os
-import types
 import unittest
 from unittest import mock
 

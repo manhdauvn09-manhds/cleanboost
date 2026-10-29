@@ -44,6 +44,12 @@ class TestGuiE2E(unittest.TestCase):
         sub = cache / "sub"
         sub.mkdir()
         (sub / "junk2.bin").write_bytes(b"y" * 60_000)
+        # v2.9.0: rules.yaml's lin_home_cache requires min_age_days=1, so
+        # freshly-written junk is invisible to the scan. Age it past the
+        # threshold or the "scan finds real junk" test scans an empty HOME.
+        old = time.time() - 3 * 86400
+        for p in (cache / "junk1.bin", sub / "junk2.bin"):
+            os.utime(p, (old, old))
         cls._old_home = os.environ.get("HOME")
         os.environ["HOME"] = cls._tmp_home
         from ui.app import App

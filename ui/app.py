@@ -938,7 +938,25 @@ class App(ctk.CTk):
         the button-disable dance — for fire-and-forget background samplers
         like the dashboard tick that must not clobber the user-facing
         status line or block real button clicks.
+
+        v2.9.0 regression fix: quiet samplers used to still take the
+        busy lock and queue. The dashboard tick fires every 2s, so during
+        a long task (scan, DISM) it piled up in the queue and delayed
+        every real click behind it. Now quiet tasks run detached and
+        post their result back through the UI queue — they never hold
+        the lock, never queue, never block a button.
         """
+        if quiet:
+            def _quiet_runner():
+                try:
+                    res = work()
+                except BaseException as e:  # noqa: BLE001
+                    res = e
+                cb = done
+                if cb is not None:
+                    _post_ui(self, lambda: cb(res))
+            threading.Thread(target=_quiet_runner, daemon=True).start()
+            return True
         if timeout is None:
             timeout = self._BG_DEFAULT_TIMEOUT
         task = (list(buttons), work, done, status, timeout, quiet)
@@ -1084,7 +1102,7 @@ class App(ctk.CTk):
             f"Stopped a stuck task after {timeout}s: {status} "
             "The app is usable again - please try once more. "
             "(Details are in the action log.)")
-        if self._bg_queue:
+        if self._bg_queue and not self._busy:
             self._start_bg(*self._bg_queue.pop(0))
 
     def _finish_bg(self, tid, t0, buttons, result, done, status):
@@ -1110,6 +1128,18 @@ class App(ctk.CTk):
                 # A failing done() must not stall the queue or leave
                 # the app silent — report it and keep going.
                 self._set_status(f"Error: {e}", auto_clear=5000)
+        # v2.9.0 regression fix: a task queued behind a normally-finished
+        # one never ran — _finish_bg released the busy lock but forgot to
+        # drain the queue (only _abandon_bg did). Clicking a button while
+        # the startup loads left the task queued forever and its button
+        # disabled — the exact "dead button" symptom v2.5.6+v2.7.0 fixed.
+        # Drain only when done() did NOT already start a task: the kill
+        # flow's done() refreshes the process list (starts a task) and
+        # queues the badge refresh, and starting that queued task here
+        # would bump _bg_task_id past the still-running refresh, whose
+        # finish would then be discarded as "late" (no re-select).
+        if self._bg_queue and not self._busy:
+            self._start_bg(*self._bg_queue.pop(0))
 
     @staticmethod
     def _crash_log_path_local():
@@ -1429,6 +1459,31 @@ class App(ctk.CTk):
         if key == "startup" and not getattr(self, "_startup_loaded", False):
             self._startup_loaded = True
             self._refresh_startup()
+
+    def _set_status(self, text, auto_clear=None):
+        """Update the bottom status bar.
+
+        v2.9.0 regression fix: the busy guard (and _tick_status) called
+        this helper but it was never defined, so every background task
+        crashed at startup with AttributeError ('_tkinter.tkapp' object
+        has no attribute '_set_status'). auto_clear (ms) clears the
+        line again after a delay (used for transient error messages);
+        a pending auto-clear is cancelled so a new message is never
+        wiped by a stale timer.
+        """
+        try:
+            self.status_lbl.configure(text=text)
+        except Exception:  # noqa: BLE001 - window going away
+            pass
+        if auto_clear:
+            pending = getattr(self, "_status_clear_after", None)
+            if pending is not None:
+                try:
+                    self.after_cancel(pending)
+                except Exception:  # noqa: BLE001
+                    pass
+            self._status_clear_after = self.after(
+                auto_clear, lambda: self._set_status(""))
 
     def _tick_status(self):
         def work():

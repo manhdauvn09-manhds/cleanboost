@@ -38,6 +38,31 @@
 <main>
 
 <div class="version">
+  <h2>v2.9.1 — Fix crash khi khởi động: _set_status bị mất + 2 lỗi hàng đợi task (dead button)</h2>
+  <div class="date">2026-10-29 — User chạy trên Windows thật: CleanBoost crash ngay khi mở (startup_error.log: AttributeError '_tkinter.tkapp' object has no attribute 'set_status')</div>
+
+  <div class="entry">
+    <span class="tag bug">Root cause</span><b>App crash ngay khi khởi động vì <code>_set_status</code> được gọi 9 chỗ nhưng không có định nghĩa.</b>
+    <p class="why">Busy guard (<code>_start_bg</code>, <code>_bg_poll</code>, <code>_finish_bg</code>, <code>_abandon_bg</code>, <code>_tick_status</code>, kill flow) gọi <code>self._set_status(...)</code> nhưng method này chưa từng tồn tại trong class App. Attribute lookup rơi xuống <code>Misc.__getattr__</code> của tkinter → AttributeError ngay task nền đầu tiên lúc khởi động (refresh top processes). Thêm định nghĩa <code>_set_status(text, auto_clear=None)</code>: cập nhật <code>status_lbl</code>, hỗ trợ auto-clear (hủy timer cũ để message mới không bị xóa nhầm).</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Task xếp hàng KHÔNG BAO GIỜ chạy khi task trước kết thúc bình thường.</b>
+    <p class="why"><code>_finish_bg</code> trả lock busy nhưng quên drain hàng đợi — chỉ <code>_abandon_bg</code> (timeout) mới drain. Bấm nút trong lúc task khác chạy → task xếp hàng vĩnh viễn, nút kẹt disabled: đúng triệu chứng "nút chết" mà v2.5.6+v2.7.0 đã từng chống. Sửa: <code>_finish_bg</code> drain queue sau khi chạy <code>done()</code>, nhưng chỉ khi <code>done()</code> chưa tự start task khác (kill flow: done() refresh danh sách process rồi queue badge refresh — nếu drain start luôn task queue đó sẽ đè <code>_bg_task_id</code> lên task refresh đang chạy, làm refresh bị coi là "late finish" và mất re-select dòng respawned).</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Sampler nền (quiet) giữ lock busy → chặn mọi cú bấm + tích đống trong hàng đợi.</b>
+    <p class="why">Docstring của <code>_run_bg</code> hứa quiet task "must not block real button clicks" nhưng thực tế vẫn set <code>_busy=True</code> và vào queue. Dashboard tick chạy mỗi 2s: trong lúc task dài (scan, DISM) nó tự queue liên tục, sau khi task xong hàng đợi có thể có hàng chục tick cũ chạy lần lượt. Sửa: quiet task (dashboard tick, badge refresh) giờ chạy detached thread riêng, kết quả post về qua <code>_post_ui</code> — không giữ lock, không queue, không chặn nút.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Tests</span><b>GUI tests giờ chạy THẬT dưới Xvfb (trước đây bị skip vì không có DISPLAY nên che mất crash).</b>
+    <p class="why">Toàn bộ suite chạy với <code>xvfb-run</code>: 149 test PASS, pyflakes sạch 100%. Sửa test_03 (file rác mới tạo chưa đủ min_age_days=1 nên scan thấy 0 byte → đặt mtime cũ 3 ngày) và dọn 1 import thừa trong tests/test_v24.py. Lưu ý: báo cáo v2.8.0 ghi "125 PASS dưới Xvfb" là sai — GUI tests chưa bao giờ chạy được trên baseline vì crash <code>_set_status</code> ngay từ đầu.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.9.0 — Phase 4: tự động hóa (auto_clean headless + lịch dọn tuần + monitor RAM/ổ đĩa)</h2>
   <div class="date">2026-10-29 — User yêu cầu Phase 4: dọn rác tự động không cần mở app; đăng ký chạy định kỳ; canh RAM/ổ đĩa báo khi đầy</div>
 
