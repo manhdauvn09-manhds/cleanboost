@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cleaner import engine, scanner
 from cleaner.clean import clean_rules, fmt_summary
 from cleaner import action_log
-from core import privilege, system_info
+from core import privilege
 
 
 def main():

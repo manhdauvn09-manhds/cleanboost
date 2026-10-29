@@ -38,6 +38,31 @@
 <main>
 
 <div class="version">
+  <h2>v2.9.0 — Phase 4: tự động hóa (auto_clean headless + lịch dọn tuần + monitor RAM/ổ đĩa)</h2>
+  <div class="date">2026-10-29 — User yêu cầu Phase 4: dọn rác tự động không cần mở app; đăng ký chạy định kỳ; canh RAM/ổ đĩa báo khi đầy</div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>auto_clean.py — dọn tự động headless, an toàn tuyệt đối.</b>
+    <p class="why">Chạy không cần GUI (Task Scheduler / cron gọi thẳng): quét mức 1, chỉ chọn rule <code>default_on</code> + risk <code>low</code> + đủ quyền (không admin thì bỏ rule cần admin), LUÔN dọn vào khu cách ly — không bao giờ xóa vĩnh viễn. Có <code>--dry-run</code> để xem trước. Ghi sự kiện vào action log. Kế thừa Bug #1/#2/#3: action-special (DISM, docker prune…) có size 0 theo thiết kế nên được chọn qua trường <code>note</code> chứ không phải size.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>Lịch dọn tuần — <code>main.py schedule install/remove/status</code>.</b>
+    <p class="why">Windows: tạo task qua <code>schtasks</code> (Chủ nhật 03:00, thêm <code>/RL HIGHEST</code> khi chạy admin). Linux: ghi dòng cron <code>0 3 * * 0</code> trỏ tới <code>auto_clean.py</code>, log ra <code>auto_clean.log</code>. Cả 2 nền đều có guard (Bug #8): từ chối cài nếu <code>.venv</code> chưa tồn tại — không bao giờ viết lịch trỏ tới interpreter không có thật (job tuần sẽ chết im lặng). Remove chỉ gỡ đúng dòng auto_clean, không đụng cron khác.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>Monitor — <code>main.py monitor --interval 60 --ram 90 --disk-free 10</code>.</b>
+    <p class="why">Vòng lặp nền kiểm tra RAM/ổ đĩa mỗi N giây; vượt ngưỡng thì popup (MessageBox Windows / notify-send Linux) + ghi <code>monitor_alert</code> vào action log. Mỗi loại cảnh báo có cooldown 30 phút để không spam. GUI cũng tự hiện banner đỏ ở tab Tổng quan khi RAM &gt; 90% hoặc ổ trống &lt; 10%.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Tests</span><b>24 test mới cho Phase 4 (tổng 149 PASS), pyflakes sạch.</b>
+    <p class="why">test_phase4.py: auto_clean chọn đúng rule (loại risk cao / opt-in / cần-admin khi không phải root; giữ action-special có note; luôn quarantine, không permanent), scheduler Linux (viết cron, bỏ qua khi đã có, guard thiếu .venv, remove chỉ gỡ dòng của mình, status) + Windows (lệnh schtasks đúng, thiếu .venv, status, remove), monitor (báo đúng ngưỡng, không báo khi khoẻ, cooldown chặn lặp, log đủ ram/disk). Dọn 1 import thừa trong auto_clean.py.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.8.0 — Force kill OneDrive: verify, respawn detection, friendly names, queued status + priority 2 done</h2>
   <div class="date">2026-10-28 — User report (chạy bản cũ): tab Process chọn OneDrive không Force kill được, nút tịt luôn; yêu cầu: lúc nào đang chạy cũng hiển thị status đang chạy cái gì; popup Force kill phải hiện tên process + tên app dễ hiểu; làm luôn các ưu tiên còn lại</div>
 
