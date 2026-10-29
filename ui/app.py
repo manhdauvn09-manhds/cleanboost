@@ -42,23 +42,23 @@ LOGO_PATH = os.path.join(ASSETS_DIR, "logo.png")
 # That default is white, which is invisible on the light theme's pale
 # secondary buttons (the "button only appears on hover" bug).
 THEMES = {
-    "dark": dict(BG="#0e1117", SIDEBAR="#141926", CARD="#1a2030",
-                 CARD2="#232c42", LINE="#2a3348", TXT="#e8edf7",
-                 MUT="#9aa7c2",
-                 BTN2="#232c42", BTN2_TXT="#e8edf7", BTN2_HOV="#33405f"),
-    "light": dict(BG="#edf0f5", SIDEBAR="#ffffff", CARD="#ffffff",
-                  CARD2="#dfe5ef", LINE="#c3ccdd", TXT="#17202f",
-                  MUT="#4b5b76",
-                  BTN2="#dbe3f0", BTN2_TXT="#17202f", BTN2_HOV="#c2cfe4"),
+    "dark": dict(BG="#0b1220", SIDEBAR="#0e1626", CARD="#111b2e",
+                 CARD2="#1a2740", LINE="#24344f", TXT="#e8eef9",
+                 MUT="#8ea2c4",
+                 BTN2="#1c2942", BTN2_TXT="#dde6f5", BTN2_HOV="#2b3c5e"),
+    "light": dict(BG="#f2f5fa", SIDEBAR="#ffffff", CARD="#ffffff",
+                  CARD2="#e7edf6", LINE="#d3dceb", TXT="#182234",
+                  MUT="#5a6b87",
+                  BTN2="#e3eaf5", BTN2_TXT="#182234", BTN2_HOV="#ccd8ea"),
 }
-C_ACC = "#4f8cff"          # accent for graphics / text highlights
-C_ACC_HOV = "#3b78f0"       # Phase 3: hover color for accent buttons
-C_ACC_BTN = "#2563eb"      # primary button bg (white text: 5.2:1)
-C_ACC_BTN_HOV = "#1d4ed8"  # primary button hover
+C_ACC = "#3d7eff"          # accent for graphics / text highlights
+C_ACC_HOV = "#2f6ae8"       # hover color for accent buttons
+C_ACC_BTN = "#2b63e8"      # primary button bg (white text)
+C_ACC_BTN_HOV = "#1f4fc4"  # primary button hover
 C_ONCOLOR = "#ffffff"      # text on any colored button
-C_GRN = "#1a9e6b"
-C_YLW = "#b8860b"
-C_RED = "#e05252"
+C_GRN = "#16a37a"
+C_YLW = "#d98a1f"
+C_RED = "#e5484d"
 
 C_BG = C_SIDEBAR = C_CARD = C_CARD2 = C_LINE = C_TXT = C_MUT = ""
 C_BTN2 = C_BTN2_TXT = C_BTN2_HOV = ""
@@ -101,6 +101,50 @@ def set_theme(mode):
 
 set_theme(_load_theme())
 ctk.set_default_color_theme("blue")
+
+# v2.10.0: CustomTkinter only recolors widgets whose colors came from
+# theme-color NAMES — widgets built with literal C_* hex values keep the
+# old palette after set_theme(), so the theme toggle used to change the
+# globals but left every existing widget painted in the old colors. This
+# bidirectional map translates any known palette value (old + new, dark +
+# light) to its counterpart in the OTHER theme so _repaint_theme() can
+# walk the widget tree and actually flip the colors.
+_THEME_ROLES = {
+    "bg":        (("#0e1117", "#0b1220"), ("#edf0f5", "#f2f5fa")),
+    "sidebar":   (("#141926", "#0e1626"), ("#ffffff", "#ffffff")),
+    "card":      (("#1a2030", "#111b2e"), ("#ffffff", "#ffffff")),
+    "card2":     (("#232c42", "#1a2740"), ("#dfe5ef", "#e7edf6")),
+    "line":      (("#2a3348", "#24344f"), ("#c3ccdd", "#d3dceb")),
+    "txt":       (("#e8edf7", "#e8eef9"), ("#17202f", "#182234")),
+    "mut":       (("#9aa7c2", "#8ea2c4"), ("#4b5b76", "#5a6b87")),
+    "btn2":      (("#232c42", "#1c2942"), ("#dbe3f0", "#e3eaf5")),
+    "btn2_txt":  (("#e8edf7", "#dde6f5"), ("#17202f", "#182234")),
+    "btn2_hov":  (("#33405f", "#2b3c5e"), ("#c2cfe4", "#ccd8ea")),
+    "acc":       (("#4f8cff", "#3d7eff"), ("#4f8cff", "#3d7eff")),
+    "acc_hov":   (("#3b78f0", "#2f6ae8"), ("#3b78f0", "#2f6ae8")),
+    "acc_btn":   (("#2563eb", "#2b63e8"), ("#2563eb", "#2b63e8")),
+    "acc_btn_hov": (("#1d4ed8", "#1f4fc4"), ("#1d4ed8", "#1f4fc4")),
+    "grn":       (("#1a9e6b", "#16a37a"), ("#1a9e6b", "#16a37a")),
+    "ylw":       (("#b8860b", "#d98a1f"), ("#b8860b", "#d98a1f")),
+    "red":       (("#e05252", "#e5484d"), ("#e05252", "#e5484d")),
+    "danger":    (("#b91c1c", "#c53030"), ("#b91c1c", "#c53030")),
+    "danger_hov": (("#991b1b", "#a52626"), ("#991b1b", "#a52626")),
+    "ok":        (("#047857", "#0e9f6e"), ("#047857", "#0e9f6e")),
+    "ok_hov":    (("#065f46", "#0b7f57"), ("#065f46", "#0b7f57")),
+}
+
+
+def _build_theme_remap():
+    remap = {}
+    for _role, (darks, lights) in _THEME_ROLES.items():
+        for c in darks:
+            remap[c] = lights[1]
+        for c in lights:
+            remap[c] = darks[1]
+    return remap
+
+
+_THEME_REMAP = _build_theme_remap()
 
 
 def _pick_font(candidates):
@@ -359,7 +403,7 @@ class DetailDialog(ctk.CTkToplevel):
         foot.pack(fill="x", padx=16, pady=(0, 14))
         self.foot_lbl = ctk.CTkLabel(foot, text="", text_color=C_MUT)
         self.foot_lbl.pack(side="left")
-        ctk.CTkButton(foot, text="Close", width=100,
+        ctk.CTkButton(foot, corner_radius=10, text="Close", width=100,
                       command=self.destroy).pack(side="right")
         _bg(self._load)
 
@@ -444,13 +488,13 @@ class ConfirmCleanDialog(ctk.CTkToplevel):
 
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(4, 16))
-        ctk.CTkButton(row, text="Cancel", fg_color=C_BTN2,
+        ctk.CTkButton(row, corner_radius=10, text="Cancel", fg_color=C_BTN2,
                       text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                       command=self._no).pack(side="right", padx=6)
-        ctk.CTkButton(row, text="Delete permanently" if permanent else "Quarantine",
-                      fg_color="#b91c1c" if permanent else "#92400e",
+        ctk.CTkButton(row, corner_radius=10, text="Delete permanently" if permanent else "Quarantine",
+                      fg_color="#c53030" if permanent else "#92400e",
                       text_color=C_ONCOLOR,
-                      hover_color="#991b1b" if permanent else "#78350f",
+                      hover_color="#a52626" if permanent else "#78350f",
                       command=self._yes).pack(side="right", padx=6)
 
     def _yes(self):
@@ -506,8 +550,8 @@ class HighRiskConfirmDialog(ctk.CTkToplevel):
                              wraplength=520, justify="left").pack(anchor="w", padx=10, pady=(0, 8))
 
         var = tk.BooleanVar(value=False)
-        run_btn = ctk.CTkButton(self, text="I understand — run high-risk actions",
-                                fg_color="#b91c1c", text_color=C_ONCOLOR, hover_color="#991b1b",
+        run_btn = ctk.CTkButton(self, corner_radius=10, text="I understand — run high-risk actions",
+                                fg_color="#c53030", text_color=C_ONCOLOR, hover_color="#a52626",
                                 state="disabled",
                                 command=self._yes)
         cb = ctk.CTkCheckBox(self, text="I understand the risks above.",
@@ -517,7 +561,7 @@ class HighRiskConfirmDialog(ctk.CTkToplevel):
         cb.pack(padx=16, pady=8, anchor="w")
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=(0, 16))
-        ctk.CTkButton(row, text="Cancel", fg_color=C_BTN2, text_color=C_BTN2_TXT,
+        ctk.CTkButton(row, corner_radius=10, text="Cancel", fg_color=C_BTN2, text_color=C_BTN2_TXT,
                       command=self._no).pack(side="right", padx=6)
         run_btn.pack(side="right", padx=6)
 
@@ -618,11 +662,11 @@ class ForceKillDialog(ctk.CTkToplevel):
                         anchor="w", padx=10, pady=(0, 8))
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=14)
-        ctk.CTkButton(row, text="Cancel", fg_color=C_BTN2,
+        ctk.CTkButton(row, corner_radius=10, text="Cancel", fg_color=C_BTN2,
                       text_color=C_BTN2_TXT,
                       command=self._no).pack(side="right", padx=6)
-        ctk.CTkButton(row, text="Force kill", fg_color="#b91c1c",
-                      text_color=C_ONCOLOR, hover_color="#991b1b",
+        ctk.CTkButton(row, corner_radius=10, text="Force kill", fg_color="#c53030",
+                      text_color=C_ONCOLOR, hover_color="#a52626",
                       command=self._yes).pack(side="right", padx=6)
 
     def _yes(self):
@@ -646,7 +690,7 @@ class ResultDialog(ctk.CTkToplevel):
         box.pack(fill="both", expand=True, padx=16, pady=6)
         box.insert("1.0", text)
         box.configure(state="disabled")
-        ctk.CTkButton(self, text="Close", width=120,
+        ctk.CTkButton(self, corner_radius=10, text="Close", width=120,
                       command=self.destroy).pack(pady=(0, 14))
 
 
@@ -672,9 +716,9 @@ class EmergencyDialog(ctk.CTkToplevel):
             self._vars[r["pid"]] = var
         row = ctk.CTkFrame(self, fg_color="transparent")
         row.pack(fill="x", padx=14, pady=12)
-        ctk.CTkButton(row, text="Close selected", fg_color="#b91c1c", text_color=C_ONCOLOR,
-                      hover_color="#991b1b", command=self._kill).pack(side="left", padx=4)
-        ctk.CTkButton(row, text="Cancel", fg_color=C_BTN2, text_color=C_BTN2_TXT,
+        ctk.CTkButton(row, corner_radius=10, text="Close selected", fg_color="#c53030", text_color=C_ONCOLOR,
+                      hover_color="#a52626", command=self._kill).pack(side="left", padx=4)
+        ctk.CTkButton(row, corner_radius=10, text="Cancel", fg_color=C_BTN2, text_color=C_BTN2_TXT,
                       command=lambda: self._close(0)).pack(side="left", padx=4)
 
     def _kill(self):
@@ -788,7 +832,7 @@ class HelpWindow(ctk.CTkToplevel):
         tb.tag_config("mut", foreground=C_MUT)
         self._render()
         self.box.configure(state="disabled")
-        ctk.CTkButton(self, text="Close", width=120,
+        ctk.CTkButton(self, corner_radius=10, text="Close", width=120,
                       command=self.destroy).pack(pady=(0, 14))
 
     def _render(self):
@@ -867,6 +911,16 @@ PAGE_GROUPS = [
     ("CLEANUP", [("clean", "Disk Cleaner"), ("quar", "Quarantine")]),
     ("SYSTEM", [("startup", "Startup")]),
 ]
+
+# v2.10.0: one-line descriptor under the page title in the top bar.
+PAGE_SUBTITLES = {
+    "dash": "Live health of your machine — RAM, CPU, disk and one-click actions",
+    "proc": "Every running process — search, sort, end or force-kill",
+    "clean": "Junk files by risk level — scan, review, clean to quarantine",
+    "quar": "Everything CleanBoost quarantined — restore or delete for good",
+    "net": "Diagnose and repair your network connection",
+    "startup": "Apps that launch with Windows — disable or re-enable",
+}
 
 
 class App(ctk.CTk):
@@ -1161,53 +1215,189 @@ class App(ctk.CTk):
         return os.path.join(d, "crash.log")
 
     # ------------------------- shell -------------------------
+    def _build_menu(self):
+        """Classic desktop menu bar (v2.10.0): File / Navigate / Theme / Help.
+
+        Uses the native tk.Menu so it follows the OS look on Windows
+        (dark title bar when the app is dark). Mirrors the sidebar so
+        every feature is reachable two ways.
+        """
+        mb = tk.Menu(self)
+
+        m_file = tk.Menu(mb, tearoff=0)
+        m_file.add_command(label="⚡  Optimize 1-Click",
+                           command=self._optimize_all)
+        m_file.add_command(label="Free RAM (light)", command=self._light)
+        m_file.add_separator()
+        m_file.add_command(label="Exit", command=self.destroy)
+        mb.add_cascade(label="File", menu=m_file)
+
+        m_nav = tk.Menu(mb, tearoff=0)
+        for key, label in PAGES:
+            m_nav.add_command(label=f"{PAGE_ICONS[key]}  {label}",
+                              command=lambda k=key: self._show_page(k))
+        mb.add_cascade(label="Navigate", menu=m_nav)
+
+        m_theme = tk.Menu(mb, tearoff=0)
+        m_theme.add_command(label="Dark theme",
+                            command=lambda: self._set_theme_mode("dark"))
+        m_theme.add_command(label="Light theme",
+                            command=lambda: self._set_theme_mode("light"))
+        mb.add_cascade(label="Theme", menu=m_theme)
+
+        m_help = tk.Menu(mb, tearoff=0)
+        m_help.add_command(label="User guide",
+                           command=lambda: HelpWindow(self))
+        m_help.add_command(label="About CleanBoost", command=self._about)
+        mb.add_cascade(label="Help", menu=m_help)
+
+        try:
+            self.config(menu=mb)
+            self._menubar = mb
+        except Exception:  # noqa: BLE001 - exotic Tk builds
+            self._menubar = None
+
+    def _about(self):
+        from tkinter import messagebox
+        try:
+            messagebox.showinfo(
+                "About CleanBoost",
+                "CleanBoost PRO\n"
+                "System care: RAM, CPU, disk, junk files, network.\n\n"
+                "Version 2.9.0\n"
+                "Built for Windows 10/11 and Linux.",
+                parent=self)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _set_theme_mode(self, mode):
+        """Apply a specific theme (dark/light) and repaint surfaces."""
+        if mode not in THEMES:
+            return
+        set_theme(mode)
+        try:
+            self.configure(fg_color=C_BG)
+        except Exception:  # noqa: BLE001
+            pass
+        self._repaint_theme()
+        self._next_theme = mode
+        try:
+            self.theme_btn.configure(
+                text="☀️" if mode == "dark" else "🌙")
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _repaint_theme(self):
+        """Recolor every existing widget for the newly-loaded theme.
+
+        v2.10.0: the theme toggle used to only reassign the C_* globals —
+        widgets built with literal hex colors kept the old palette, so the
+        light theme never actually rendered. Walk the tree and remap every
+        color-bearing property through _THEME_REMAP (old/new, dark/light).
+        """
+        def remap(color):
+            if isinstance(color, str):
+                key = color.lower()
+                if key in _THEME_REMAP:
+                    return _THEME_REMAP[key]
+            return color
+
+        def repaint(widget):
+            props = {}
+            for prop in ("fg_color", "text_color", "hover_color",
+                         "border_color", "placeholder_text_color",
+                         "label_text_color", "progress_color"):
+                try:
+                    val = widget.cget(prop)
+                except Exception:  # noqa: BLE001 - prop not supported
+                    continue
+                nv = remap(val)
+                if nv != val:
+                    props[prop] = nv
+            if props:
+                try:
+                    widget.configure(**props)
+                except Exception:  # noqa: BLE001
+                    pass
+            if isinstance(widget, tk.Canvas):
+                try:
+                    widget.configure(bg=remap(widget.cget("bg")))
+                except Exception:  # noqa: BLE001
+                    pass
+            for child in widget.winfo_children():
+                repaint(child)
+
+        try:
+            repaint(self)
+        except Exception:  # noqa: BLE001
+            pass
+        # Composite widgets (CTkScrollableFrame) hide their toplevel frame
+        # inside an internal canvas, so winfo_children() never reaches
+        # them — repaint every page frame explicitly.
+        for _key, (f, _label) in getattr(self, "_pages", {}).items():
+            try:
+                repaint(f)
+            except Exception:  # noqa: BLE001
+                pass
+        # ttk.Treeview colors come from a shared Style, not widget props.
+        try:
+            _dark_tree(self)
+        except Exception:  # noqa: BLE001
+            pass
+
     def _build_sidebar(self):
         # Phase 3 UI revamp: sidebar grouped into 3 sections (MONITOR /
         # CLEANUP / SYSTEM) instead of a flat 6-button column. Each
         # section uses a muted label header. Some buttons get a numeric
         # "badge" label (quarantine item count, process count) that is
         # refreshed lazily by _refresh_sidebar_badges().
-        sb = ctk.CTkFrame(self, fg_color=C_SIDEBAR, corner_radius=0, width=216)
+        #
+        # v2.10.0 restyle: tighter brand block, hairline dividers,
+        # rounded nav pills and a quieter footer for a professional look.
+        sb = ctk.CTkFrame(self, fg_color=C_SIDEBAR, corner_radius=0, width=224)
         sb.pack(side="left", fill="y")
         sb.pack_propagate(False)
 
-        logo = ctk.CTkFrame(sb, fg_color="transparent")
-        logo.pack(fill="x", padx=16, pady=(20, 6))
+        brand = ctk.CTkFrame(sb, fg_color="transparent")
+        brand.pack(fill="x", padx=18, pady=(22, 12))
         try:
             from PIL import Image as PILImage
             _pil = PILImage.open(LOGO_PATH)
-            self._logo_img = ctk.CTkImage(_pil, size=(52, 52))
-            ctk.CTkLabel(logo, image=self._logo_img, text="").pack(
-                side="left", padx=(0, 10))
+            self._logo_img = ctk.CTkImage(_pil, size=(46, 46))
+            ctk.CTkLabel(brand, image=self._logo_img, text="").pack(
+                side="left", padx=(0, 12))
         except Exception:  # noqa: BLE001
             pass
-        txt = ctk.CTkFrame(logo, fg_color="transparent")
-        txt.pack(side="left")
-        ctk.CTkLabel(txt, text="CleanBoost", font=(FONT, 19, "bold"),
+        bt = ctk.CTkFrame(brand, fg_color="transparent")
+        bt.pack(side="left")
+        ctk.CTkLabel(bt, text="CleanBoost", font=(FONT, 18, "bold"),
                      anchor="w").pack(anchor="w")
-        ctk.CTkLabel(txt, text="PRO", font=(FONT, 11),
+        ctk.CTkLabel(bt, text="PRO · system care", font=(FONT, 10),
                      text_color=C_MUT, anchor="w").pack(anchor="w")
+
+        ctk.CTkFrame(sb, fg_color=C_LINE, height=1).pack(fill="x",
+                                                         padx=16, pady=(0, 10))
 
         # Group container that we'll refresh badge labels inside.
         self._sidebar_container = ctk.CTkFrame(sb, fg_color="transparent")
-        self._sidebar_container.pack(fill="x", padx=6, pady=(6, 0))
+        self._sidebar_container.pack(fill="x", padx=8, pady=(4, 0))
         self._sidebar_badges = {}   # key -> CTkLabel that holds the badge text
         for grp, entries in PAGE_GROUPS:
             hdr = ctk.CTkLabel(
                 self._sidebar_container, text=grp,
                 font=(FONT, 9, "bold"),
                 text_color=C_MUT, anchor="w")
-            hdr.pack(fill="x", padx=(14, 0), pady=(8, 2))
+            hdr.pack(fill="x", padx=(14, 0), pady=(10, 3))
             for key, label in entries:
                 icon = PAGE_ICONS[key]
                 row = ctk.CTkFrame(self._sidebar_container,
                                    fg_color="transparent")
-                row.pack(fill="x", pady=2)
+                row.pack(fill="x", pady=1)
                 b = ctk.CTkButton(
                     row, text=f"  {icon}  {label}", anchor="w",
                     fg_color="transparent", text_color=C_TXT,
                     hover_color=C_BTN2_HOV, font=(FONT, 13),
-                    height=38,
+                    height=36, corner_radius=8,
                     command=lambda k=key: self._show_page(k))
                 b.pack(side="left", fill="x", expand=True)
                 # The badge label sits to the right; its text is refreshed
@@ -1215,72 +1405,84 @@ class App(ctk.CTk):
                 badge = ctk.CTkLabel(row, text="", font=(FONT, 9, "bold"),
                                      text_color=C_MUT, anchor="center",
                                      width=28)
-                badge.pack(side="right", padx=(0, 6))
+                badge.pack(side="right", padx=(0, 8))
                 self._nav_btns[key] = b
                 self._sidebar_badges[key] = badge
 
         ctk.CTkLabel(sb, text="", fg_color="transparent").pack(fill="both", expand=True)
-        ctk.CTkLabel(sb, text="© copy by Dau Sy Manh", font=(FONT, 11),
-                     text_color=C_MUT).pack(pady=(0, 4))
-        ctk.CTkLabel(sb, text="CleanBoost v2.8.0", font=(FONT, 10),
-                     text_color=C_MUT).pack(pady=(0, 16))
+        ctk.CTkFrame(sb, fg_color=C_LINE, height=1).pack(fill="x", padx=16)
+        ctk.CTkLabel(sb, text="© Dau Sy Manh", font=(FONT, 10),
+                     text_color=C_MUT).pack(pady=(8, 2))
+        ctk.CTkLabel(sb, text="CleanBoost v2.9.0", font=(FONT, 10),
+                     text_color=C_MUT).pack(pady=(0, 14))
 
     def _build_main(self):
         main = ctk.CTkFrame(self, fg_color=C_BG, corner_radius=0)
         main.pack(side="left", fill="both", expand=True)
 
+        # v2.10.0: classic desktop menu bar — File / Navigate / Theme /
+        # Help. Gives every feature a keyboard-friendly, familiar home
+        # and mirrors the sidebar so nothing is buried.
+        self._build_menu()
+
         # topbar — Phase 3 revamp: page title (left) + global search +
         # Optimize 1-Click button + help/theme (right).
-        top = ctk.CTkFrame(main, fg_color=C_BG, height=58)
-        top.pack(fill="x", padx=20, pady=(14, 0))
+        top = ctk.CTkFrame(main, fg_color=C_BG, height=64)
+        top.pack(fill="x", padx=24, pady=(16, 0))
         top.pack_propagate(False)
-        self.page_title = ctk.CTkLabel(top, text="", font=(FONT, 19, "bold"))
-        self.page_title.pack(side="left")
+        tt = ctk.CTkFrame(top, fg_color="transparent")
+        tt.pack(side="left")
+        self.page_title = ctk.CTkLabel(tt, text="", font=(FONT, 20, "bold"))
+        self.page_title.pack(anchor="w")
+        self.page_subtitle = ctk.CTkLabel(tt, text="", font=(FONT, 11),
+                                          text_color=C_MUT, anchor="w")
+        self.page_subtitle.pack(anchor="w")
 
         # Global search (Phase 3 #search): jump to a tab + filter rows.
         srch = ctk.CTkFrame(top, fg_color=C_BTN2, corner_radius=10,
-                            height=34)
-        srch.pack(side="left", padx=(16, 0))
+                            height=36)
+        srch.pack(side="left", padx=(20, 0))
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write",
                                   lambda *_: self._on_search_changed())
         search_entry = ctk.CTkEntry(
-            srch, textvariable=self.search_var, width=220, height=34,
+            srch, textvariable=self.search_var, width=220, height=36,
             border_width=0, fg_color="transparent",
             placeholder_text="Search processes, rules, items...",
             font=(FONT, 12))
-        search_entry.pack(side="left", padx=8)
+        search_entry.pack(side="left", padx=10)
         ctk.CTkLabel(srch, text="🔍", font=(FONT, 14),
-                     text_color=C_MUT).pack(side="left", padx=(4, 8))
+                     text_color=C_MUT).pack(side="left", padx=(4, 10))
 
         # Optimize 1-Click global button (Phase 3 #opt). PRIMARY action —
         # always visible, runs the full RAM+clean+refresh+ping sweep.
         self.opt_btn = ctk.CTkButton(
-            top, text="⚡  Optimize 1-Click", width=170, height=34,
+            top, text="⚡  Optimize 1-Click", width=180, height=36,
             font=(FONT, 13, "bold"),
             fg_color=C_ACC, text_color="#ffffff",
-            hover_color=C_ACC_HOV,
+            hover_color=C_ACC_HOV, corner_radius=10,
             command=self._optimize_all)
         self.opt_btn.pack(side="right", padx=(6, 0))
 
-        help_btn = ctk.CTkButton(top, text="?", width=34, height=34,
+        help_btn = ctk.CTkButton(top, text="?", width=36, height=36,
                                  font=(FONT, 15, "bold"), fg_color=C_BTN2,
                                  text_color=C_BTN2_TXT,
-                                 hover_color=C_BTN2_HOV,
+                                 hover_color=C_BTN2_HOV, corner_radius=10,
                                  command=lambda: HelpWindow(self))
         help_btn.pack(side="right", padx=(8, 0))
         self.theme_btn = ctk.CTkButton(
             top, text="☀️" if C_BG == THEMES["dark"]["BG"] else "🌙",
-            width=34, height=34, font=(FONT, 14), fg_color=C_BTN2,
+            width=36, height=36, font=(FONT, 14), fg_color=C_BTN2,
             text_color=C_BTN2_TXT,
-            hover_color=C_BTN2_HOV, command=self._toggle_theme)
+            hover_color=C_BTN2_HOV, corner_radius=10,
+            command=self._toggle_theme)
         self.theme_btn.pack(side="right", padx=(8, 0))
         is_admin = privilege.is_admin()
         self.admin_badge = ctk.CTkLabel(
             top, text="● ADMIN" if is_admin else "● USER",
             font=(FONT, 11, "bold"),
             text_color=C_GRN if is_admin else C_MUT)
-        self.admin_badge.pack(side="right")
+        self.admin_badge.pack(side="right", padx=(0, 12))
 
         # pages
         self.page_host = ctk.CTkFrame(main, fg_color=C_BG)
@@ -1420,16 +1622,7 @@ class App(ctk.CTk):
         # set_theme) already re-colors every CustomTkinter widget live,
         # so toggling without destroy keeps the user's state intact.
         new = "light" if C_BG == THEMES["dark"]["BG"] else "dark"
-        set_theme(new)
-        # Repaint the toplevel surface so any literal-C_* widgets still
-        # track the new theme without rebuilding the whole App.
-        try:
-            self.configure(fg_color=C_BG)
-        except Exception:  # noqa: BLE001
-            pass
-        # Keep _next_theme for back-compat with tests and the main()
-        # rebuild loop; it's just no longer the only theme path now.
-        self._next_theme = new
+        self._set_theme_mode(new)
 
     def _show_page(self, key):
         for k, b in self._nav_btns.items():
@@ -1439,6 +1632,11 @@ class App(ctk.CTk):
             if k == key:
                 f.pack(fill="both", expand=True)
                 self.page_title.configure(text=label)
+                try:
+                    self.page_subtitle.configure(
+                        text=PAGE_SUBTITLES.get(key, ""))
+                except Exception:  # noqa: BLE001
+                    pass
             else:
                 f.pack_forget()
         if key == "quar":
@@ -1520,7 +1718,8 @@ class App(ctk.CTk):
         row = ctk.CTkFrame(page, fg_color="transparent")
         row.pack(fill="x")
 
-        c1 = ctk.CTkFrame(row, fg_color=C_CARD, corner_radius=12)
+        c1 = ctk.CTkFrame(row, fg_color=C_CARD, corner_radius=12,
+                           border_width=1, border_color=C_LINE)
         c1.pack(side="left", fill="both", expand=True, padx=(0, 8))
         ctk.CTkLabel(c1, text="Emergency RAM release",
                      font=(FONT, 14, "bold"), anchor="w").pack(anchor="w", padx=16, pady=(14, 2))
@@ -1528,12 +1727,13 @@ class App(ctk.CTk):
                               "tick the ones to close, then frees RAM.",
                      font=(FONT, 12), text_color=C_MUT, wraplength=380,
                      justify="left", anchor="w").pack(anchor="w", padx=16, pady=(0, 10))
-        self.emergency_btn = ctk.CTkButton(c1, text="Free RAM now", fg_color="#b91c1c", text_color=C_ONCOLOR,
-                                           hover_color="#991b1b",
+        self.emergency_btn = ctk.CTkButton(c1, text="Free RAM now", fg_color="#c53030", text_color=C_ONCOLOR,
+                                           hover_color="#a52626",
                                            command=self._emergency)
         self.emergency_btn.pack(anchor="w", padx=16, pady=(0, 16))
 
-        c2 = ctk.CTkFrame(row, fg_color=C_CARD, corner_radius=12)
+        c2 = ctk.CTkFrame(row, fg_color=C_CARD, corner_radius=12,
+                           border_width=1, border_color=C_LINE)
         c2.pack(side="left", fill="both", expand=True, padx=(8, 0))
         ctk.CTkLabel(c2, text="Light RAM clean",
                      font=(FONT, 14, "bold"), anchor="w").pack(anchor="w", padx=16, pady=(14, 2))
@@ -1541,8 +1741,8 @@ class App(ctk.CTk):
                               "app. Completely safe.",
                      font=(FONT, 12), text_color=C_MUT, wraplength=380,
                      justify="left", anchor="w").pack(anchor="w", padx=16, pady=(0, 10))
-        self.light_btn = ctk.CTkButton(c2, text="Light clean", fg_color="#047857", text_color=C_ONCOLOR,
-                                       hover_color="#065f46",
+        self.light_btn = ctk.CTkButton(c2, text="Light clean", fg_color="#0e9f6e", text_color=C_ONCOLOR,
+                                       hover_color="#0b7f57",
                                        command=self._light)
         self.light_btn.pack(anchor="w", padx=16, pady=(0, 16))
 
@@ -1550,7 +1750,8 @@ class App(ctk.CTk):
         hrow = ctk.CTkFrame(page, fg_color="transparent")
         hrow.pack(fill="x", pady=(10, 0))
 
-        h1 = ctk.CTkFrame(hrow, fg_color=C_CARD, corner_radius=12)
+        h1 = ctk.CTkFrame(hrow, fg_color=C_CARD, corner_radius=12,
+                           border_width=1, border_color=C_LINE)
         h1.pack(side="left", fill="both", expand=True, padx=(0, 8))
         # Phase 3 #health: layout = ring (left) + score text + breakdown
         # (right). The ring gives an at-a-glance green/yellow/red signal
@@ -1585,7 +1786,8 @@ class App(ctk.CTk):
                                                 command=self._refresh_health)
         self.health_refresh_btn.pack(anchor="w", padx=16, pady=(0, 16))
 
-        h2 = ctk.CTkFrame(hrow, fg_color=C_CARD, corner_radius=12)
+        h2 = ctk.CTkFrame(hrow, fg_color=C_CARD, corner_radius=12,
+                           border_width=1, border_color=C_LINE)
         h2.pack(side="left", fill="both", expand=True, padx=(8, 0))
         ctk.CTkLabel(h2, text="Optimize in 1 Click",
                      font=(FONT, 14, "bold"), anchor="w").pack(anchor="w", padx=16, pady=(14, 2))
@@ -1594,8 +1796,8 @@ class App(ctk.CTk):
                               "permanently.",
                      font=(FONT, 12), text_color=C_MUT, wraplength=380,
                      justify="left", anchor="w").pack(anchor="w", padx=16, pady=(0, 10))
-        self.optimize_btn = ctk.CTkButton(h2, text="Optimize Now", fg_color="#047857", text_color=C_ONCOLOR,
-                                          hover_color="#065f46",
+        self.optimize_btn = ctk.CTkButton(h2, corner_radius=10, text="Optimize Now", fg_color="#0e9f6e", text_color=C_ONCOLOR,
+                                          hover_color="#0b7f57",
                                           command=self._optimize)
         self.optimize_btn.pack(anchor="w", padx=16, pady=(0, 8))
         self.opt_prog = ctk.CTkProgressBar(h2, width=280, height=12)
@@ -1622,7 +1824,8 @@ class App(ctk.CTk):
 
         tcols = ctk.CTkFrame(page, fg_color="transparent")
         tcols.pack(fill="x")
-        t1 = ctk.CTkFrame(tcols, fg_color=C_CARD, corner_radius=12)
+        t1 = ctk.CTkFrame(tcols, fg_color=C_CARD, corner_radius=12,
+                           border_width=1, border_color=C_LINE)
         t1.pack(side="left", fill="both", expand=True, padx=(0, 8))
         ctk.CTkLabel(t1, text="Top 10 by RAM", font=(FONT, 12, "bold"),
                      anchor="w").pack(anchor="w", padx=12, pady=(10, 4))
@@ -1631,7 +1834,8 @@ class App(ctk.CTk):
         self.top_ram_box.pack(fill="both", expand=True, padx=8, pady=(0, 10))
         self.top_ram_box.insert("1.0", "Loading...")
         self.top_ram_box.configure(state="disabled")
-        t2 = ctk.CTkFrame(tcols, fg_color=C_CARD, corner_radius=12)
+        t2 = ctk.CTkFrame(tcols, fg_color=C_CARD, corner_radius=12,
+                           border_width=1, border_color=C_LINE)
         t2.pack(side="left", fill="both", expand=True, padx=(8, 0))
         ctk.CTkLabel(t2, text="Top 10 by CPU", font=(FONT, 12, "bold"),
                      anchor="w").pack(anchor="w", padx=12, pady=(10, 4))
@@ -1857,7 +2061,7 @@ class App(ctk.CTk):
                                     width=300, height=36)
         self.p_search.pack(side="left", padx=(0, 8))
         self.p_search.bind("<KeyRelease>", lambda _e: self._fill_proc())
-        self.p_refresh_btn = ctk.CTkButton(top, text="Refresh", width=110, height=36,
+        self.p_refresh_btn = ctk.CTkButton(top, corner_radius=10, text="Refresh", width=110, height=36,
                                            fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                                            command=self._refresh_proc)
         self.p_refresh_btn.pack(side="left")
@@ -1879,11 +2083,11 @@ class App(ctk.CTk):
 
         row = ctk.CTkFrame(page, fg_color="transparent")
         row.pack(fill="x")
-        self.p_kill_btn = ctk.CTkButton(row, text="End selected", height=36,
+        self.p_kill_btn = ctk.CTkButton(row, corner_radius=10, text="End selected", height=36,
                                         command=lambda: self._kill_selected(False))
         self.p_kill_btn.pack(side="left", padx=(0, 8))
-        self.p_fkill_btn = ctk.CTkButton(row, text="Force kill", height=36,
-                                         fg_color="#b91c1c", text_color=C_ONCOLOR, hover_color="#991b1b",
+        self.p_fkill_btn = ctk.CTkButton(row, corner_radius=10, text="Force kill", height=36,
+                                         fg_color="#c53030", text_color=C_ONCOLOR, hover_color="#a52626",
                                          command=lambda: self._kill_selected(True))
         self.p_fkill_btn.pack(side="left")
         ctk.CTkLabel(row, text="(!) = sensitive, asks first. Dangerous system processes are hidden.",
@@ -2110,7 +2314,7 @@ class App(ctk.CTk):
 
         row = ctk.CTkFrame(page, fg_color="transparent")
         row.pack(fill="x", pady=(0, 6))
-        self.c_scan_btn = ctk.CTkButton(row, text="Scan", width=150, height=38,
+        self.c_scan_btn = ctk.CTkButton(row, corner_radius=10, text="Scan", width=150, height=38,
                                         fg_color=C_ACC_BTN,
                                         hover_color=C_ACC_BTN_HOV,
                                         text_color=C_ONCOLOR,
@@ -2131,12 +2335,12 @@ class App(ctk.CTk):
 
         brow = ctk.CTkFrame(page, fg_color="transparent")
         brow.pack(fill="x")
-        self.c_del_btn = ctk.CTkButton(brow, text="Delete to free space",
-                                       height=40, fg_color="#b91c1c", text_color=C_ONCOLOR,
-                                       hover_color="#991b1b", font=(FONT, 13, "bold"),
+        self.c_del_btn = ctk.CTkButton(brow, corner_radius=10, text="Delete to free space",
+                                       height=40, fg_color="#c53030", text_color=C_ONCOLOR,
+                                       hover_color="#a52626", font=(FONT, 13, "bold"),
                                        command=lambda: self._do_clean(True))
         self.c_del_btn.pack(side="left", padx=(0, 8))
-        self.c_q_btn = ctk.CTkButton(brow, text="Quarantine (safe)",
+        self.c_q_btn = ctk.CTkButton(brow, corner_radius=10, text="Quarantine (safe)",
                                      height=40, fg_color="#92400e",
                                      hover_color="#78350f", text_color=C_ONCOLOR,
                                      font=(FONT, 13),
@@ -2212,7 +2416,7 @@ class App(ctk.CTk):
             size_label = "— (action)" if is_special else _fmt_gb(res["size"])
             ctk.CTkLabel(top, text=size_label, font=(FONT, 13, "bold"),
                          text_color=C_ACC).pack(side="right", padx=(8, 0))
-            ctk.CTkButton(top, text="Details", width=80, height=28,
+            ctk.CTkButton(top, corner_radius=10, text="Details", width=80, height=28,
                           fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                           command=lambda r=res: DetailDialog(self, r)).pack(side="right")
 
@@ -2345,28 +2549,28 @@ class App(ctk.CTk):
 
         row = ctk.CTkFrame(page, fg_color="transparent")
         row.pack(fill="x")
-        self.q_refresh_btn = ctk.CTkButton(row, text="Refresh", height=36, fg_color=C_BTN2, text_color=C_BTN2_TXT,
+        self.q_refresh_btn = ctk.CTkButton(row, corner_radius=10, text="Refresh", height=36, fg_color=C_BTN2, text_color=C_BTN2_TXT,
                                            hover_color=C_BTN2_HOV,
                                            command=self._refresh_quarantine)
         self.q_refresh_btn.pack(side="left", padx=(0, 8))
-        self.q_restore_btn = ctk.CTkButton(row, text="Restore selected", height=36,
-                                           fg_color="#047857", text_color=C_ONCOLOR, hover_color="#065f46",
+        self.q_restore_btn = ctk.CTkButton(row, corner_radius=10, text="Restore selected", height=36,
+                                           fg_color="#0e9f6e", text_color=C_ONCOLOR, hover_color="#0b7f57",
                                            command=self._q_restore)
         self.q_restore_btn.pack(side="left", padx=(0, 8))
-        self.q_delete_btn = ctk.CTkButton(row, text="Delete permanently", height=36,
-                                          fg_color="#b91c1c", text_color=C_ONCOLOR, hover_color="#991b1b",
+        self.q_delete_btn = ctk.CTkButton(row, corner_radius=10, text="Delete permanently", height=36,
+                                          fg_color="#c53030", text_color=C_ONCOLOR, hover_color="#a52626",
                                           command=self._q_delete)
         self.q_delete_btn.pack(side="left", padx=(0, 8))
-        self.q_purge_btn = ctk.CTkButton(row, text="Clean items over 14 days", height=36,
+        self.q_purge_btn = ctk.CTkButton(row, corner_radius=10, text="Clean items over 14 days", height=36,
                                          fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                                          command=self._q_purge)
         self.q_purge_btn.pack(side="left", padx=(0, 8))
-        self.q_all_btn = ctk.CTkButton(row, text="Select all", height=36, fg_color=C_BTN2, text_color=C_BTN2_TXT,
+        self.q_all_btn = ctk.CTkButton(row, corner_radius=10, text="Select all", height=36, fg_color=C_BTN2, text_color=C_BTN2_TXT,
                                        hover_color=C_BTN2_HOV,
                                        command=lambda: self._q_select_all(None))
         self.q_all_btn.pack(side="left", padx=(0, 8))
-        self.q_destroy_btn = ctk.CTkButton(row, text="Destroy All", height=36,
-                                            fg_color="#7f1d1d", text_color=C_ONCOLOR, hover_color="#991b1b",
+        self.q_destroy_btn = ctk.CTkButton(row, corner_radius=10, text="Destroy All", height=36,
+                                            fg_color="#7f1d1d", text_color=C_ONCOLOR, hover_color="#a52626",
                                             command=self._q_destroy_prompt)
         self.q_destroy_btn.pack(side="left")
         # v2.5.3: progress bar — Destroy / Delete used to run with no
@@ -2554,8 +2758,8 @@ class App(ctk.CTk):
                      font=(FONT, 12), text_color=C_MUT, wraplength=500,
                      justify="left").pack(padx=16, pady=(0, 10))
         var = tk.BooleanVar(value=False)
-        run_btn = ctk.CTkButton(dlg, text="Destroy All", fg_color="#7f1d1d", text_color=C_ONCOLOR,
-                                hover_color="#991b1b", state="disabled",
+        run_btn = ctk.CTkButton(dlg, corner_radius=10, text="Destroy All", fg_color="#7f1d1d", text_color=C_ONCOLOR,
+                                hover_color="#a52626", state="disabled",
                                 command=lambda: (dlg.destroy(),
                                                  self._run_destroy_all()))
         cb = ctk.CTkCheckBox(dlg, text="I understand — destroy everything in "
@@ -2566,7 +2770,7 @@ class App(ctk.CTk):
         cb.pack(padx=16, pady=6, anchor="w")
         row = ctk.CTkFrame(dlg, fg_color="transparent")
         row.pack(pady=12)
-        ctk.CTkButton(row, text="Cancel", fg_color=C_BTN2, text_color=C_BTN2_TXT,
+        ctk.CTkButton(row, corner_radius=10, text="Cancel", fg_color=C_BTN2, text_color=C_BTN2_TXT,
                       command=dlg.destroy).pack(side="left", padx=6)
         run_btn.pack(side="left", padx=6)
 
@@ -2631,7 +2835,7 @@ class App(ctk.CTk):
             text_color=C_MUT, font=(FONT, 12), anchor="w",
             wraplength=900, justify="left"
         ).pack(side="left", fill="x")
-        ctk.CTkButton(header, text="Guide", width=90,
+        ctk.CTkButton(header, corner_radius=10, text="Guide", width=90,
                       fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                       command=self._open_network_guide).pack(side="right")
         tabs = ctk.CTkTabview(page)
@@ -2675,7 +2879,7 @@ class App(ctk.CTk):
                      anchor="w").pack(anchor="w", pady=(0, 4))
         row = ctk.CTkFrame(scroll, fg_color="transparent")
         row.pack(fill="x", pady=(0, 4))
-        self.net_info_btn = ctk.CTkButton(row, text="Refresh Info", width=130,
+        self.net_info_btn = ctk.CTkButton(row, corner_radius=10, text="Refresh Info", width=130,
                                           fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                                           command=self._refresh_net_info)
         self.net_info_btn.pack(side="left")
@@ -2710,11 +2914,11 @@ class App(ctk.CTk):
         self.net_port_tree.tag_configure("warning", foreground=C_YLW)
         prow = ctk.CTkFrame(scroll, fg_color="transparent")
         prow.pack(fill="x", pady=(0, 4))
-        self.net_ports_btn = ctk.CTkButton(prow, text="Refresh Ports", width=130,
+        self.net_ports_btn = ctk.CTkButton(prow, corner_radius=10, text="Refresh Ports", width=130,
                                            fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                                            command=self._refresh_ports)
         self.net_ports_btn.pack(side="left", padx=(0, 8))
-        self.net_guide_btn = ctk.CTkButton(prow, text="How to close", width=130,
+        self.net_guide_btn = ctk.CTkButton(prow, corner_radius=10, text="How to close", width=130,
                                            fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                                            command=self._port_guide)
         self.net_guide_btn.pack(side="left")
@@ -2740,11 +2944,11 @@ class App(ctk.CTk):
         self.net_after_lbl.pack(anchor="w", pady=(0, 4))
         srow = ctk.CTkFrame(scroll, fg_color="transparent")
         srow.pack(fill="x", pady=(0, 4))
-        self.net_speed_btn = ctk.CTkButton(srow, text="Run Speed Test", width=150,
+        self.net_speed_btn = ctk.CTkButton(srow, corner_radius=10, text="Run Speed Test", width=150,
                                            fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                                            command=self._run_speed_test)
         self.net_speed_btn.pack(side="left", padx=(0, 8))
-        self.net_speed_reset_btn = ctk.CTkButton(srow, text="Reset", width=90,
+        self.net_speed_reset_btn = ctk.CTkButton(srow, corner_radius=10, text="Reset", width=90,
                                                  fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                                                  command=self._reset_speed)
         self.net_speed_reset_btn.pack(side="left")
@@ -2754,7 +2958,7 @@ class App(ctk.CTk):
         # --- Network Diagnostics (v2.5) ---
         ctk.CTkLabel(scroll, text="Network Diagnostics", font=(FONT, 14, "bold"),
                      anchor="w").pack(anchor="w", pady=(0, 4))
-        self.diag_btn = ctk.CTkButton(scroll, text="Run Diagnostics", width=160,
+        self.diag_btn = ctk.CTkButton(scroll, corner_radius=10, text="Run Diagnostics", width=160,
                                       fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                                       command=self._run_diagnostics)
         self.diag_btn.pack(anchor="w", pady=(0, 4))
@@ -2782,12 +2986,12 @@ class App(ctk.CTk):
         self.hogs_tree.pack(fill="x", pady=(0, 4))
         hrow = ctk.CTkFrame(scroll, fg_color="transparent")
         hrow.pack(fill="x", pady=(0, 4))
-        self.hogs_btn = ctk.CTkButton(hrow, text="Find Bandwidth Hogs", width=170,
+        self.hogs_btn = ctk.CTkButton(hrow, corner_radius=10, text="Find Bandwidth Hogs", width=170,
                                       fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                                       command=self._find_hogs)
         self.hogs_btn.pack(side="left", padx=(0, 8))
-        self.hogs_kill_btn = ctk.CTkButton(hrow, text="End selected", width=130,
-                                           fg_color="#b91c1c", text_color=C_ONCOLOR, hover_color="#991b1b",
+        self.hogs_kill_btn = ctk.CTkButton(hrow, corner_radius=10, text="End selected", width=130,
+                                           fg_color="#c53030", text_color=C_ONCOLOR, hover_color="#a52626",
                                            command=self._end_hog)
         self.hogs_kill_btn.pack(side="left")
         self.hogs_msg = ctk.CTkLabel(hrow, text="", text_color=C_MUT, font=(FONT, 11))
@@ -2805,8 +3009,8 @@ class App(ctk.CTk):
                      wraplength=900, justify="left").pack(anchor="w", pady=(0, 4))
         qrow = ctk.CTkFrame(scroll, fg_color="transparent")
         qrow.pack(fill="x", pady=(0, 4))
-        self.net_refresh_btn = ctk.CTkButton(qrow, text="Quick Refresh", width=150,
-                                             fg_color="#047857", text_color=C_ONCOLOR, hover_color="#065f46",
+        self.net_refresh_btn = ctk.CTkButton(qrow, corner_radius=10, text="Quick Refresh", width=150,
+                                             fg_color="#0e9f6e", text_color=C_ONCOLOR, hover_color="#0b7f57",
                                              command=self._quick_refresh_net)
         self.net_refresh_btn.pack(side="left", padx=(0, 8))
         self.net_refresh_prog = ctk.CTkProgressBar(qrow, width=280, height=12)
@@ -2827,8 +3031,8 @@ class App(ctk.CTk):
                      wraplength=900, justify="left").pack(anchor="w", pady=(0, 4))
         frow = ctk.CTkFrame(scroll, fg_color="transparent")
         frow.pack(fill="x", pady=(0, 4))
-        self.flush_btn = ctk.CTkButton(frow, text="Flush Network", width=150,
-                                       fg_color="#047857", text_color=C_ONCOLOR, hover_color="#065f46",
+        self.flush_btn = ctk.CTkButton(frow, corner_radius=10, text="Flush Network", width=150,
+                                       fg_color="#0e9f6e", text_color=C_ONCOLOR, hover_color="#0b7f57",
                                        command=self._flush_network)
         self.flush_btn.pack(side="left", padx=(0, 8))
         self.flush_prog = ctk.CTkProgressBar(frow, width=280, height=12)
@@ -2853,22 +3057,22 @@ class App(ctk.CTk):
         drow.pack(fill="x", pady=(0, 4))
         self.dns_preset_btns = {}
         for name in ("Cloudflare", "Google", "Quad9"):
-            b = ctk.CTkButton(drow, text=name, width=110,
+            b = ctk.CTkButton(drow, corner_radius=10, text=name, width=110,
                               fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                               command=lambda n=name: self._set_dns_preset(n))
             b.pack(side="left", padx=(0, 8))
             self.dns_preset_btns[name] = b
-        self.dns_auto_btn = ctk.CTkButton(drow, text="Auto (ISP)", width=110,
+        self.dns_auto_btn = ctk.CTkButton(drow, corner_radius=10, text="Auto (ISP)", width=110,
                                           fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                                           command=self._set_dns_auto_ui)
         self.dns_auto_btn.pack(side="left", padx=(0, 8))
-        self.dns_undo_btn = ctk.CTkButton(drow, text="Undo DNS change", width=140,
+        self.dns_undo_btn = ctk.CTkButton(drow, corner_radius=10, text="Undo DNS change", width=140,
                                           fg_color="#92400e", text_color=C_ONCOLOR, hover_color="#78350f",
                                           command=self._undo_dns)
         self.dns_undo_btn.pack(side="left")
         drow2 = ctk.CTkFrame(scroll, fg_color="transparent")
         drow2.pack(fill="x", pady=(0, 4))
-        self.dns_measure_btn = ctk.CTkButton(drow2, text="Measure fastest DNS",
+        self.dns_measure_btn = ctk.CTkButton(drow2, corner_radius=10, text="Measure fastest DNS",
                                              width=170, fg_color=C_BTN2, text_color=C_BTN2_TXT,
                                              hover_color=C_BTN2_HOV,
                                              command=self._measure_dns)
@@ -2893,12 +3097,12 @@ class App(ctk.CTk):
                      wraplength=900, justify="left").pack(anchor="w", pady=(0, 4))
         rrow = ctk.CTkFrame(scroll, fg_color="transparent")
         rrow.pack(fill="x", pady=(0, 4))
-        self.adapter_reset_btn = ctk.CTkButton(rrow, text="Adapter Reset...", width=150,
+        self.adapter_reset_btn = ctk.CTkButton(rrow, corner_radius=10, text="Adapter Reset...", width=150,
                                                fg_color="#92400e", text_color=C_ONCOLOR, hover_color="#78350f",
                                                command=self._adapter_reset_prompt)
         self.adapter_reset_btn.pack(side="left", padx=(0, 8))
-        self.deep_reset_btn = ctk.CTkButton(rrow, text="Deep Reset...", width=150,
-                                            fg_color="#b91c1c", text_color=C_ONCOLOR, hover_color="#991b1b",
+        self.deep_reset_btn = ctk.CTkButton(rrow, corner_radius=10, text="Deep Reset...", width=150,
+                                            fg_color="#c53030", text_color=C_ONCOLOR, hover_color="#a52626",
                                             command=self._deep_reset_prompt)
         self.deep_reset_btn.pack(side="left")
         self.reset_msg = ctk.CTkLabel(scroll, text="", text_color=C_MUT,
@@ -3371,9 +3575,9 @@ class App(ctk.CTk):
 
         row = ctk.CTkFrame(dlg, fg_color="transparent")
         row.pack(pady=12)
-        ctk.CTkButton(row, text="Cancel", fg_color=C_BTN2, text_color=C_BTN2_TXT,
+        ctk.CTkButton(row, corner_radius=10, text="Cancel", fg_color=C_BTN2, text_color=C_BTN2_TXT,
                       command=cancel).pack(side="left", padx=6)
-        ctk.CTkButton(row, text="Reset Now", fg_color="#92400e", text_color=C_ONCOLOR,
+        ctk.CTkButton(row, corner_radius=10, text="Reset Now", fg_color="#92400e", text_color=C_ONCOLOR,
                       hover_color="#78350f", command=reset_now).pack(side="left", padx=6)
 
         def tick():
@@ -3442,8 +3646,8 @@ class App(ctk.CTk):
                      font=(FONT, 12), text_color=C_MUT, wraplength=460,
                      justify="left").pack(padx=16, pady=(0, 10))
         var = tk.BooleanVar(value=False)
-        run_btn = ctk.CTkButton(dlg, text="Run Deep Reset", fg_color="#b91c1c", text_color=C_ONCOLOR,
-                                hover_color="#991b1b", state="disabled",
+        run_btn = ctk.CTkButton(dlg, corner_radius=10, text="Run Deep Reset", fg_color="#c53030", text_color=C_ONCOLOR,
+                                hover_color="#a52626", state="disabled",
                                 command=lambda: (dlg.destroy(),
                                                  self._run_deep_reset()))
         cb = ctk.CTkCheckBox(dlg, text="I understand — reset Winsock & TCP/IP "
@@ -3454,7 +3658,7 @@ class App(ctk.CTk):
         cb.pack(padx=16, pady=6, anchor="w")
         row = ctk.CTkFrame(dlg, fg_color="transparent")
         row.pack(pady=12)
-        ctk.CTkButton(row, text="Cancel", fg_color=C_BTN2, text_color=C_BTN2_TXT,
+        ctk.CTkButton(row, corner_radius=10, text="Cancel", fg_color=C_BTN2, text_color=C_BTN2_TXT,
                       command=dlg.destroy).pack(side="left", padx=6)
         run_btn.pack(side="left", padx=6)
 
@@ -3502,16 +3706,16 @@ class App(ctk.CTk):
 
         row = ctk.CTkFrame(page, fg_color="transparent")
         row.pack(fill="x")
-        self.s_refresh_btn = ctk.CTkButton(row, text="Refresh", height=36,
+        self.s_refresh_btn = ctk.CTkButton(row, corner_radius=10, text="Refresh", height=36,
                                            fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
                                            command=self._refresh_startup)
         self.s_refresh_btn.pack(side="left", padx=(0, 8))
-        self.s_disable_btn = ctk.CTkButton(row, text="Disable selected", height=36,
+        self.s_disable_btn = ctk.CTkButton(row, corner_radius=10, text="Disable selected", height=36,
                                            fg_color="#92400e", text_color=C_ONCOLOR, hover_color="#78350f",
                                            command=lambda: self._toggle_startup(False))
         self.s_disable_btn.pack(side="left", padx=(0, 8))
-        self.s_enable_btn = ctk.CTkButton(row, text="Enable selected", height=36,
-                                          fg_color="#047857", text_color=C_ONCOLOR, hover_color="#065f46",
+        self.s_enable_btn = ctk.CTkButton(row, corner_radius=10, text="Enable selected", height=36,
+                                          fg_color="#0e9f6e", text_color=C_ONCOLOR, hover_color="#0b7f57",
                                           command=lambda: self._toggle_startup(True))
         self.s_enable_btn.pack(side="left")
         self.s_msg = ctk.CTkLabel(page, text="", text_color=C_MUT, font=(FONT, 12))

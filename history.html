@@ -38,6 +38,31 @@
 <main>
 
 <div class="version">
+  <h2>v2.10.0 — UI/UX revamp: menu bar + palette mới + theme toggle sửa thật</h2>
+  <div class="date">2026-10-29 — User yêu cầu: "thay đổi layout toàn bộ cho dễ sử dụng, chuyên nghiệp và đẹp hơn; đổi sang giao diện dạng menu, sắp xếp lại tính năng"</div>
+
+  <div class="entry">
+    <span class="tag feat">Feature</span><b>Menu bar kiểu desktop (File / Navigate / Theme / Help).</b>
+    <p class="why">Native tk.Menu trên đỉnh cửa sổ: File (⚡ Optimize 1-Click, Free RAM light, Exit), Navigate (đủ 6 trang, mirror sidebar), Theme (Dark/Light), Help (User guide, About). Mọi tính năng có 2 đường vào — menu + sidebar. Giữ <code>self._menubar</code> để test truy cập được.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Restyle</span><b>Palette mới chuyên nghiệp + topbar có subtitle + sidebar gọn lại.</b>
+    <p class="why">Dark: navy đậm (#0b1220 bg / #0e1626 sidebar / #111b2e card) thay cho xám cũ. Light: trắng sạch + xám lạnh. Accent xanh #3d7eff, semantic green/yellow/red chuẩn hóa; thay toàn bộ màu hex cứng (đỏ/green nút) cho đồng bộ. Topbar: title + dòng mô tả dưới (PAGE_SUBTITLES). Sidebar: brand block + divider, nav pill bo góc 8, footer nhẹ. Toàn bộ nút thêm corner_radius=10.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag bug">Bug fix</span><b>Theme toggle không repaint widget — light theme chưa bao giờ render thật.</b>
+    <p class="why">CustomTkinter chỉ repaint màu theo tên theme, không repaint màu hex literal. <code>_toggle_theme</code> cũ chỉ đổi biến C_* toàn cục — mọi widget giữ nguyên palette cũ (chụp màn hình xác nhận: bấm toggle mà màn hình vẫn tối). Thêm <code>_repaint_theme()</code>: walk toàn bộ widget tree, remap fg/text/hover/border/placeholder qua bảng <code>_THEME_REMAP</code> (song phương dark↔light, kèm giá trị palette cũ để lần toggle đầu sau upgrade cũng đúng), repaint cả page frame composite (CTkScrollableFrame không nằm trong winfo_children) và tái áp style ttk Treeview.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Tests</span><b>149 test PASS (Xvfb), pyflakes sạch.</b>
+    <p class="why">Toàn bộ suite chạy dưới Xvfb sau revamp — không phá widget contract (p_tree, status_lbl, _scan_checks, C_* constants…). Smoke test: menu invoke đổi trang đúng, Theme→Light repaint page_host sang #f2f5fa, toggle qua lại ổn định.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.9.1 — Fix crash khi khởi động: _set_status bị mất + 2 lỗi hàng đợi task (dead button)</h2>
   <div class="date">2026-10-29 — User chạy trên Windows thật: CleanBoost crash ngay khi mở (startup_error.log: AttributeError '_tkinter.tkapp' object has no attribute 'set_status')</div>
 
