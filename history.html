@@ -38,6 +38,46 @@
 <main>
 
 <div class="version">
+  <h2>v2.12.0 — Đồng bộ visual style cho buttons, inputs, tables và dialogs</h2>
+  <div class="date">2026-10-29 — User phản hồi control vẫn trông mặc định dù layout đã đổi</div>
+
+  <div class="entry">
+    <span class="tag feat">Visual system</span><b>Chuẩn hóa hierarchy của nút trên toàn ứng dụng.</b>
+    <p class="why">Một style pass áp dụng cho mọi cửa sổ: xanh dương cho hành động chính, xanh lá cho thao tác an toàn, đỏ cho xóa/force/reset nguy hiểm, neutral cho nút phụ. Đồng bộ bo góc, chiều cao tối thiểu và bỏ màu mỗi trang tự chọn; giữ nguyên nhãn, callback và trạng thái active của navigation.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Controls</span><b>Inputs, checkbox, progress, tabs, bảng và Help dialog dùng chung palette.</b>
+    <p class="why">Entry có nền tối hơn, viền focus-friendly và placeholder có contrast; textbox dạng surface có scrollbar cùng màu; checkbox/progress/tab được restyle; Treeview có header, row height và font thống nhất. HelpWindow có header phân cấp và nút đóng theo cùng control language. Style áp dụng lại sau khi đổi theme và cho dialog modal.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Verification</span><b>149 test PASS dưới Xvfb; syntax compile sạch.</b>
+    <p class="why">Theme, dialog, HelpWindow và toàn suite xác nhận control hoạt động, modal vẫn giữ grab; <code>compileall</code> pass. Worktree có thư mục <code>preview/</code> chưa theo dõi từ trước, không đưa vào commit.</p>
+  </div>
+</div>
+
+<div class="version">
+  <h2>v2.11.0 — Tái cấu trúc giao diện: menu tác vụ ngang + dashboard console</h2>
+  <div class="date">2026-10-29 — User phản hồi bản v2.10.0 chỉ đổi màu, chưa khác bố cục đủ nhiều; yêu cầu giao diện chuyên nghiệp và khác hẳn bản cũ</div>
+
+  <div class="entry">
+    <span class="tag feat">Layout</span><b>Bỏ sidebar dọc và native menu xám; thay bằng product bar + menu ngang theo nhóm.</b>
+    <p class="why">Thanh trên cùng nay dành cho thương hiệu, tìm kiếm và hành động toàn cục. Bên dưới là menu điều hướng theo Monitor / Cleanup / System; nút active có nền xanh, không còn thanh menu native lệch palette. Vẫn giữ <code>_nav_btns</code>, <code>_sidebar_badges</code>, <code>_pages</code> và toàn bộ callback để không đổi logic tính năng.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Dashboard</span><b>Overview được bố trí lại theo luồng đọc và mức độ quan trọng.</b>
+    <p class="why">Hero “Your PC, at a glance” đặt tối ưu an toàn ở góc phải; dải telemetry RAM/CPU/Disk cạnh Health Score; nhóm Recommended Actions phân biệt phục hồi RAM với dọn nhẹ; cuối trang là snapshot process. Giữ nguyên widget contract cho GUI tests. Thu gọn vòng Health để chữ không đè nhau; banner cảnh báo chỉ hiện khi thật sự có cảnh báo, không còn một dải đỏ trống.</p>
+  </div>
+
+  <div class="entry">
+    <span class="tag feat">Verification</span><b>149 test PASS dưới Xvfb, pyflakes sạch.</b>
+    <p class="why">Kiểm tra screenshot dark theme ở 1240×780, khởi động app và xác nhận điều hướng vẫn giữ đúng title/subtitle, badge không đè lên chữ menu. Chạy full suite sau khi chỉnh layout.</p>
+  </div>
+</div>
+
+<div class="version">
   <h2>v2.10.0 — UI/UX revamp: menu bar + palette mới + theme toggle sửa thật</h2>
   <div class="date">2026-10-29 — User yêu cầu: "thay đổi layout toàn bộ cho dễ sử dụng, chuyên nghiệp và đẹp hơn; đổi sang giao diện dạng menu, sắp xếp lại tính năng"</div>
 

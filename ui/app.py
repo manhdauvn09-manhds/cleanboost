@@ -259,6 +259,11 @@ def _make_modal(win, parent, _attempt=0):
             win.after(100, lambda: _make_modal(win, parent, _attempt + 1))
         except Exception:  # noqa: BLE001
             pass
+    if _attempt == 0:
+        try:
+            win.after_idle(lambda: _style_window_controls(win))
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _dark_tree(parent):
@@ -268,13 +273,111 @@ def _dark_tree(parent):
     except Exception:  # noqa: BLE001
         pass
     style.configure("Treeview", background=C_CARD, foreground=C_TXT,
-                    fieldbackground=C_CARD, rowheight=28, borderwidth=0,
-                    font=(FONT, 11))
+                    fieldbackground=C_CARD, rowheight=32, borderwidth=0,
+                    font=(FONT, 10))
     style.configure("Treeview.Heading", background=C_CARD2,
-                    foreground=C_TXT, relief="flat", font=(FONT, 11, "bold"))
+                    foreground=C_MUT, relief="flat", font=(FONT, 9, "bold"),
+                    padding=(10, 9))
     style.map("Treeview", background=[("selected", C_ACC_BTN)],
               foreground=[("selected", "#ffffff")])
+    style.configure("Treeview", rowheight=32)
+    style.configure("TCombobox", fieldbackground=C_CARD, background=C_CARD2,
+                    foreground=C_TXT, arrowcolor=C_MUT, bordercolor=C_LINE,
+                    lightcolor=C_LINE, darkcolor=C_LINE, padding=7)
+    style.map("TCombobox", fieldbackground=[("readonly", C_CARD)],
+              foreground=[("readonly", C_TXT)])
     return ttk.Treeview(parent)
+
+
+def _style_window_controls(root):
+    """Apply CleanBoost's control language to one window and its children."""
+    danger_words = ("delete", "destroy all", "force kill", "end selected",
+                    "review apps", "reset now", "high-risk",
+                    "clean items over")
+    safe_words = ("quarantine", "light clean", "clean memory", "restore")
+    primary_words = ("optimize", "scan", "run ", "flush network",
+                     "find bandwidth", "measure fastest", "adapter reset")
+
+    def walk(widget):
+        if isinstance(widget, ctk.CTkButton):
+            try:
+                if getattr(widget, "_cb_nav_button", False):
+                    widget.configure(corner_radius=8)
+                    for child in widget.winfo_children():
+                        walk(child)
+                    return
+                text = str(widget.cget("text") or "").strip().lower()
+                if any(word in text for word in danger_words):
+                    fg, hover = "#c53030", "#a52626"
+                    text_color = C_ONCOLOR
+                elif text.startswith("quarantine"):
+                    fg, hover = "#0e9f6e", "#0b7f57"
+                    text_color = C_ONCOLOR
+                elif any(word in text for word in safe_words):
+                    fg, hover = "#0e9f6e", "#0b7f57"
+                    text_color = C_ONCOLOR
+                elif any(word in text for word in primary_words):
+                    fg, hover = C_ACC_BTN, C_ACC_BTN_HOV
+                    text_color = C_ONCOLOR
+                else:
+                    fg, hover = C_BTN2, C_BTN2_HOV
+                    text_color = C_BTN2_TXT
+                widget.configure(fg_color=fg, hover_color=hover,
+                                 text_color=text_color, corner_radius=8,
+                                 border_width=0)
+                if int(widget.cget("height")) < 32:
+                    widget.configure(height=32)
+            except Exception:  # noqa: BLE001 - platform-specific CTk controls
+                pass
+        elif isinstance(widget, ctk.CTkEntry):
+            try:
+                widget.configure(fg_color=C_BG, text_color=C_TXT,
+                                 placeholder_text_color=C_MUT,
+                                 border_color=C_LINE, border_width=1,
+                                 corner_radius=8)
+            except Exception:  # noqa: BLE001
+                pass
+        elif isinstance(widget, ctk.CTkTextbox):
+            try:
+                widget.configure(fg_color=C_CARD, text_color=C_TXT,
+                                 border_color=C_LINE, border_width=1,
+                                 corner_radius=9,
+                                 scrollbar_button_color=C_CARD2,
+                                 scrollbar_button_hover_color=C_BTN2_HOV)
+            except Exception:  # noqa: BLE001
+                pass
+        elif isinstance(widget, ctk.CTkCheckBox):
+            try:
+                widget.configure(text_color=C_TXT, fg_color=C_ACC_BTN,
+                                 hover_color=C_ACC_BTN_HOV,
+                                 border_color=C_LINE,
+                                 checkmark_color=C_ONCOLOR,
+                                 corner_radius=5, border_width=2)
+            except Exception:  # noqa: BLE001
+                pass
+        elif isinstance(widget, ctk.CTkProgressBar):
+            try:
+                widget.configure(fg_color=C_CARD2, progress_color=C_ACC,
+                                 border_color=C_LINE, corner_radius=5)
+            except Exception:  # noqa: BLE001
+                pass
+        elif isinstance(widget, ctk.CTkTabview):
+            try:
+                widget.configure(fg_color=C_BG, segmented_button_fg_color=C_CARD,
+                                 segmented_button_selected_color=C_ACC_BTN,
+                                 segmented_button_selected_hover_color=C_ACC_BTN_HOV,
+                                 segmented_button_unselected_color=C_CARD,
+                                 segmented_button_unselected_hover_color=C_BTN2_HOV,
+                                 text_color=C_TXT, corner_radius=10)
+            except Exception:  # noqa: BLE001
+                pass
+        for child in widget.winfo_children():
+            walk(child)
+
+    try:
+        walk(root)
+    except Exception:  # noqa: BLE001 - window may already be closing
+        pass
 
 
 # ------------------------- widgets -------------------------
@@ -291,20 +394,23 @@ class RingGauge(tk.Canvas):
 
     def set(self, pct, subtitle=""):
         self.delete("all")
-        cx, cy, r = self._s / 2, self._s / 2, self._s / 2 - 20
+        compact = self._s < 120
+        cx, cy = self._s / 2, self._s / 2
+        r = self._s / 2 - (12 if compact else 20)
+        width = 8 if compact else 13
         pct = max(0, min(100, pct))
         self.create_arc(cx - r, cy - r, cx + r, cy + r, start=90, extent=359.9,
-                        style="arc", outline=C_LINE, width=13)
+                        style="arc", outline=C_LINE, width=width)
         color = C_ACC if pct < 70 else (C_YLW if pct < 90 else C_RED)
         if pct > 0:
             self.create_arc(cx - r, cy - r, cx + r, cy + r, start=90,
                             extent=-359.9 * pct / 100, style="arc",
-                            outline=color, width=13)
-        self.create_text(cx, cy - 10, text=f"{pct:.0f}%",
-                         fill=C_TXT, font=(FONT, 24, "bold"))
-        self.create_text(cx, cy + 18, text=self._title,
-                         fill=C_MUT, font=(FONT, 12))
-        if subtitle:
+                            outline=color, width=width)
+        self.create_text(cx, cy - (6 if compact else 10), text=f"{pct:.0f}%",
+                         fill=C_TXT, font=(FONT, 17 if compact else 24, "bold"))
+        self.create_text(cx, cy + (13 if compact else 18), text=self._title,
+                         fill=C_MUT, font=(FONT, 9 if compact else 12))
+        if subtitle and not compact:
             self.create_text(cx, cy + 38, text=subtitle,
                              fill=C_MUT, font=(FONT, 10))
 
@@ -332,10 +438,11 @@ class HealthRing(tk.Canvas):
                         style="arc", outline=C_LINE, width=16)
         if score is None:
             self.create_text(cx, cy - 6, text="--",
-                             fill=C_TXT, font=(FONT, 28, "bold"))
+                             fill=C_TXT,
+                             font=(FONT, 22 if self._s < 110 else 28, "bold"))
             self.create_text(cx, cy + 22, text="Health",
-                             fill=C_MUT, font=(FONT, 11))
-            if subtitle:
+                             fill=C_MUT, font=(FONT, 9 if self._s < 110 else 11))
+            if subtitle and self._s >= 120:
                 self.create_text(cx, cy + 42, text=subtitle,
                                  fill=C_MUT, font=(FONT, 9))
             return
@@ -352,10 +459,11 @@ class HealthRing(tk.Canvas):
                             extent=-359.9 * score / 100, style="arc",
                             outline=color, width=16)
         self.create_text(cx, cy - 6, text=f"{score:.0f}",
-                         fill=C_TXT, font=(FONT, 28, "bold"))
+                         fill=C_TXT,
+                         font=(FONT, 22 if self._s < 110 else 28, "bold"))
         self.create_text(cx, cy + 22, text="/ 100",
-                         fill=C_MUT, font=(FONT, 11))
-        if subtitle:
+                         fill=C_MUT, font=(FONT, 9 if self._s < 110 else 11))
+        if subtitle and self._s >= 120:
             self.create_text(cx, cy + 42, text=subtitle,
                              fill=color, font=(FONT, 9, "bold"))
 
@@ -816,11 +924,22 @@ class HelpWindow(ctk.CTkToplevel):
         super().__init__(master)
         self.title("User Manual — CleanBoost")
         self.geometry("780x600")
+        self.configure(fg_color=C_BG)
         _make_modal(self, master)
-        ctk.CTkLabel(self, text="User Manual",
-                     font=(FONT, 17, "bold")).pack(pady=(14, 6))
-        self.box = ctk.CTkTextbox(self, wrap="word", font=(FONT, 13))
-        self.box.pack(fill="both", expand=True, padx=16, pady=6)
+        header = ctk.CTkFrame(self, fg_color=C_CARD, corner_radius=10)
+        header.pack(fill="x", padx=18, pady=(18, 8))
+        ctk.CTkLabel(header, text="CLEANBOOST  /  USER GUIDE",
+                     font=(FONT, 9, "bold"), text_color=C_ACC).pack(
+                         anchor="w", padx=16, pady=(12, 2))
+        ctk.CTkLabel(header, text="User Manual",
+                     font=(FONT, 19, "bold")).pack(anchor="w", padx=16,
+                                                    pady=(0, 12))
+        self.box = ctk.CTkTextbox(self, wrap="word", font=(FONT, 12),
+                                  fg_color=C_CARD, text_color=C_TXT,
+                                  border_color=C_LINE, border_width=1,
+                                  corner_radius=10, scrollbar_button_color=C_CARD2,
+                                  scrollbar_button_hover_color=C_BTN2_HOV)
+        self.box.pack(fill="both", expand=True, padx=18, pady=6)
         tb = self.box._textbox
         tb.tag_config("h1", font=(FONT, 19, "bold"), foreground=C_ACC,
                       spacing1=10, spacing3=6)
@@ -832,8 +951,11 @@ class HelpWindow(ctk.CTkToplevel):
         tb.tag_config("mut", foreground=C_MUT)
         self._render()
         self.box.configure(state="disabled")
-        ctk.CTkButton(self, corner_radius=10, text="Close", width=120,
-                      command=self.destroy).pack(pady=(0, 14))
+        ctk.CTkButton(self, corner_radius=8, text="Close guide", width=120,
+                      height=34, fg_color=C_BTN2, text_color=C_BTN2_TXT,
+                      hover_color=C_BTN2_HOV,
+                      command=self.destroy).pack(anchor="e", padx=18,
+                                                 pady=(4, 16))
 
     def _render(self):
         import re
@@ -955,8 +1077,8 @@ class App(ctk.CTk):
         self._nav_btns = {}
         self._pages = {}
 
-        self._build_sidebar()
         self._build_main()
+        _style_window_controls(self)
         self._show_page("dash")
 
         self._tick_dashboard()
@@ -1216,46 +1338,8 @@ class App(ctk.CTk):
 
     # ------------------------- shell -------------------------
     def _build_menu(self):
-        """Classic desktop menu bar (v2.10.0): File / Navigate / Theme / Help.
-
-        Uses the native tk.Menu so it follows the OS look on Windows
-        (dark title bar when the app is dark). Mirrors the sidebar so
-        every feature is reachable two ways.
-        """
-        mb = tk.Menu(self)
-
-        m_file = tk.Menu(mb, tearoff=0)
-        m_file.add_command(label="⚡  Optimize 1-Click",
-                           command=self._optimize_all)
-        m_file.add_command(label="Free RAM (light)", command=self._light)
-        m_file.add_separator()
-        m_file.add_command(label="Exit", command=self.destroy)
-        mb.add_cascade(label="File", menu=m_file)
-
-        m_nav = tk.Menu(mb, tearoff=0)
-        for key, label in PAGES:
-            m_nav.add_command(label=f"{PAGE_ICONS[key]}  {label}",
-                              command=lambda k=key: self._show_page(k))
-        mb.add_cascade(label="Navigate", menu=m_nav)
-
-        m_theme = tk.Menu(mb, tearoff=0)
-        m_theme.add_command(label="Dark theme",
-                            command=lambda: self._set_theme_mode("dark"))
-        m_theme.add_command(label="Light theme",
-                            command=lambda: self._set_theme_mode("light"))
-        mb.add_cascade(label="Theme", menu=m_theme)
-
-        m_help = tk.Menu(mb, tearoff=0)
-        m_help.add_command(label="User guide",
-                           command=lambda: HelpWindow(self))
-        m_help.add_command(label="About CleanBoost", command=self._about)
-        mb.add_cascade(label="Help", menu=m_help)
-
-        try:
-            self.config(menu=mb)
-            self._menubar = mb
-        except Exception:  # noqa: BLE001 - exotic Tk builds
-            self._menubar = None
+        """Keep the app chrome native-menu-free; navigation is themed below."""
+        self._menubar = None
 
     def _about(self):
         from tkinter import messagebox
@@ -1280,6 +1364,7 @@ class App(ctk.CTk):
         except Exception:  # noqa: BLE001
             pass
         self._repaint_theme()
+        _style_window_controls(self)
         self._next_theme = mode
         try:
             self.theme_btn.configure(
@@ -1417,76 +1502,130 @@ class App(ctk.CTk):
                      text_color=C_MUT).pack(pady=(0, 14))
 
     def _build_main(self):
+        self._nav_btns = {}
+        self._sidebar_badges = {}
         main = ctk.CTkFrame(self, fg_color=C_BG, corner_radius=0)
-        main.pack(side="left", fill="both", expand=True)
+        main.pack(fill="both", expand=True)
 
-        # v2.10.0: classic desktop menu bar — File / Navigate / Theme /
-        # Help. Gives every feature a keyboard-friendly, familiar home
-        # and mirrors the sidebar so nothing is buried.
-        self._build_menu()
-
-        # topbar — Phase 3 revamp: page title (left) + global search +
-        # Optimize 1-Click button + help/theme (right).
-        top = ctk.CTkFrame(main, fg_color=C_BG, height=64)
-        top.pack(fill="x", padx=24, pady=(16, 0))
+        # Product bar: identity left, global command/search and utility
+        # actions right. Navigation is a separate, grouped horizontal menu.
+        top = ctk.CTkFrame(main, fg_color=C_SIDEBAR, height=66,
+                           corner_radius=0)
+        top.pack(fill="x")
         top.pack_propagate(False)
-        tt = ctk.CTkFrame(top, fg_color="transparent")
-        tt.pack(side="left")
-        self.page_title = ctk.CTkLabel(tt, text="", font=(FONT, 20, "bold"))
-        self.page_title.pack(anchor="w")
-        self.page_subtitle = ctk.CTkLabel(tt, text="", font=(FONT, 11),
-                                          text_color=C_MUT, anchor="w")
-        self.page_subtitle.pack(anchor="w")
 
-        # Global search (Phase 3 #search): jump to a tab + filter rows.
-        srch = ctk.CTkFrame(top, fg_color=C_BTN2, corner_radius=10,
-                            height=36)
+        brand = ctk.CTkFrame(top, fg_color="transparent")
+        brand.pack(side="left", padx=(22, 24))
+        try:
+            from PIL import Image as PILImage
+            self._logo_img = ctk.CTkImage(PILImage.open(LOGO_PATH),
+                                          size=(36, 36))
+            ctk.CTkLabel(brand, image=self._logo_img, text="").pack(
+                side="left", padx=(0, 10))
+        except Exception:  # noqa: BLE001
+            pass
+        brand_text = ctk.CTkFrame(brand, fg_color="transparent")
+        brand_text.pack(side="left")
+        ctk.CTkLabel(brand_text, text="CLEANBOOST", font=(FONT, 14, "bold"),
+                     anchor="w").pack(anchor="w")
+        ctk.CTkLabel(brand_text, text="PC CARE CONSOLE", font=(FONT, 9),
+                     text_color=C_MUT, anchor="w").pack(anchor="w")
+
+        # Global search (Phase 3 #search): filter current data sets.
+        srch = ctk.CTkFrame(top, fg_color=C_BG, corner_radius=9,
+                            height=36, border_width=1, border_color=C_LINE)
         srch.pack(side="left", padx=(20, 0))
+        srch.pack_propagate(False)
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write",
                                   lambda *_: self._on_search_changed())
         search_entry = ctk.CTkEntry(
-            srch, textvariable=self.search_var, width=220, height=36,
+            srch, textvariable=self.search_var, width=210, height=34,
             border_width=0, fg_color="transparent",
-            placeholder_text="Search processes, rules, items...",
-            font=(FONT, 12))
+            placeholder_text="Search this workspace",
+            font=(FONT, 12), corner_radius=9)
         search_entry.pack(side="left", padx=10)
-        ctk.CTkLabel(srch, text="🔍", font=(FONT, 14),
+        ctk.CTkLabel(srch, text="⌕", font=(FONT, 20),
                      text_color=C_MUT).pack(side="left", padx=(4, 10))
 
-        # Optimize 1-Click global button (Phase 3 #opt). PRIMARY action —
-        # always visible, runs the full RAM+clean+refresh+ping sweep.
+        tools = ctk.CTkFrame(top, fg_color="transparent")
+        tools.pack(side="right", padx=22)
         self.opt_btn = ctk.CTkButton(
-            top, text="⚡  Optimize 1-Click", width=180, height=36,
-            font=(FONT, 13, "bold"),
-            fg_color=C_ACC, text_color="#ffffff",
-            hover_color=C_ACC_HOV, corner_radius=10,
+            tools, text="Run optimization", width=160, height=36,
+            font=(FONT, 12, "bold"), fg_color=C_ACC_BTN,
+            text_color=C_ONCOLOR, hover_color=C_ACC_BTN_HOV,
+            corner_radius=9,
             command=self._optimize_all)
-        self.opt_btn.pack(side="right", padx=(6, 0))
-
-        help_btn = ctk.CTkButton(top, text="?", width=36, height=36,
-                                 font=(FONT, 15, "bold"), fg_color=C_BTN2,
+        self.opt_btn.pack(side="right", padx=(10, 0))
+        help_btn = ctk.CTkButton(tools, text="Help", width=54, height=36,
+                                 font=(FONT, 11, "bold"), fg_color=C_BTN2,
                                  text_color=C_BTN2_TXT,
-                                 hover_color=C_BTN2_HOV, corner_radius=10,
+                                 hover_color=C_BTN2_HOV, corner_radius=9,
                                  command=lambda: HelpWindow(self))
         help_btn.pack(side="right", padx=(8, 0))
         self.theme_btn = ctk.CTkButton(
-            top, text="☀️" if C_BG == THEMES["dark"]["BG"] else "🌙",
-            width=36, height=36, font=(FONT, 14), fg_color=C_BTN2,
+            tools, text="☀️" if C_BG == THEMES["dark"]["BG"] else "🌙",
+            width=38, height=36, font=(FONT, 14), fg_color=C_BTN2,
             text_color=C_BTN2_TXT,
-            hover_color=C_BTN2_HOV, corner_radius=10,
+            hover_color=C_BTN2_HOV, corner_radius=9,
             command=self._toggle_theme)
         self.theme_btn.pack(side="right", padx=(8, 0))
         is_admin = privilege.is_admin()
         self.admin_badge = ctk.CTkLabel(
-            top, text="● ADMIN" if is_admin else "● USER",
-            font=(FONT, 11, "bold"),
-            text_color=C_GRN if is_admin else C_MUT)
-        self.admin_badge.pack(side="right", padx=(0, 12))
+            tools, text="ADMIN" if is_admin else "STANDARD USER",
+            font=(FONT, 9, "bold"), text_color=C_GRN if is_admin else C_MUT,
+            fg_color=C_CARD, corner_radius=8)
+        self.admin_badge.pack(side="right", padx=(0, 8), ipadx=8, ipady=5)
+
+        # Category menu replaces the old permanent sidebar. Each group is
+        # a compact horizontal menu with a clear, task-oriented category.
+        nav_shell = ctk.CTkFrame(main, fg_color=C_CARD, corner_radius=0,
+                                 height=58, border_width=0)
+        nav_shell.pack(fill="x")
+        nav_shell.pack_propagate(False)
+        self._sidebar_container = ctk.CTkFrame(nav_shell,
+                                               fg_color="transparent")
+        self._sidebar_container.pack(side="left", padx=18, pady=7)
+        self._sidebar_badges = {}
+        for grp, entries in PAGE_GROUPS:
+            group = ctk.CTkFrame(self._sidebar_container,
+                                 fg_color="transparent")
+            group.pack(side="left", padx=(0, 14))
+            ctk.CTkLabel(group, text=grp.title(), font=(FONT, 8, "bold"),
+                         text_color=C_MUT).pack(anchor="w", padx=(8, 0))
+            buttons = ctk.CTkFrame(group, fg_color="transparent")
+            buttons.pack(anchor="w")
+            for key, label in entries:
+                b = ctk.CTkButton(
+                    buttons, text=f"{PAGE_ICONS[key]}  {label}",
+                    height=30, width=max(112, len(label) * 9 + 68),
+                    font=(FONT, 11, "bold"), anchor="center",
+                    fg_color="transparent", text_color=C_MUT,
+                    hover_color=C_BTN2_HOV, corner_radius=7,
+                    command=lambda k=key: self._show_page(k))
+                b.pack(side="left", padx=2)
+                b._cb_nav_button = True
+                self._nav_btns[key] = b
+                badge = ctk.CTkLabel(b, text="", font=(FONT, 8, "bold"),
+                                     text_color=C_MUT, width=0)
+                badge.place_forget()
+                self._sidebar_badges[key] = badge
+
+        # Page title and helper copy sit below navigation, aligned with
+        # the work surface rather than competing with global controls.
+        heading = ctk.CTkFrame(main, fg_color="transparent", height=70)
+        heading.pack(fill="x", padx=28, pady=(14, 0))
+        heading.pack_propagate(False)
+        self.page_title = ctk.CTkLabel(heading, text="",
+                                       font=(FONT, 22, "bold"), anchor="w")
+        self.page_title.pack(anchor="w")
+        self.page_subtitle = ctk.CTkLabel(heading, text="", font=(FONT, 11),
+                                          text_color=C_MUT, anchor="w")
+        self.page_subtitle.pack(anchor="w", pady=(1, 0))
 
         # pages
         self.page_host = ctk.CTkFrame(main, fg_color=C_BG)
-        self.page_host.pack(fill="both", expand=True, padx=20, pady=10)
+        self.page_host.pack(fill="both", expand=True, padx=28, pady=(4, 10))
         for key, label in PAGES:
             if key == "dash":
                 # v2.7.0: Overview scrolls — the Top-10 panel made it
@@ -1553,7 +1692,7 @@ class App(ctk.CTk):
         self._toast_after_id = None
 
     def _refresh_sidebar_badges(self):
-        """Phase 3: refresh the numeric badges on the sidebar buttons.
+        """Refresh numeric badges on the categorized navigation controls.
         Runs in a worker because Q.list_items() etc. may touch disk."""
         def work():
             badges = {}
@@ -1577,6 +1716,11 @@ class App(ctk.CTk):
                     badge.configure(
                         text=txt,
                         text_color=C_RED if n and key == "quar" else C_MUT)
+                    if txt:
+                        badge.place(relx=1.0, rely=0.5, anchor="e",
+                                    x=-9)
+                    else:
+                        badge.place_forget()
                 except Exception:  # noqa: BLE001
                     pass
 
@@ -1627,7 +1771,7 @@ class App(ctk.CTk):
     def _show_page(self, key):
         for k, b in self._nav_btns.items():
             b.configure(fg_color=C_ACC_BTN if k == key else "transparent",
-                        text_color="#ffffff" if k == key else C_TXT)
+                        text_color=C_ONCOLOR if k == key else C_MUT)
         for k, (f, label) in self._pages.items():
             if k == key:
                 f.pack(fill="both", expand=True)
@@ -1701,154 +1845,197 @@ class App(ctk.CTk):
 
     # ------------------------- Overview page -------------------------
     def _build_dashboard(self, page):
+        page.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="dash")
+        page.grid_columnconfigure(4, weight=2, uniform="dash")
+        page.grid_rowconfigure(6, weight=1)
+
         self.d_banner = ctk.CTkLabel(page, text="", fg_color="#7f1d1d",
-                                     corner_radius=10, text_color="#ffffff",
-                                     font=(FONT, 13, "bold"))
-        cards = ctk.CTkFrame(page, fg_color="transparent")
-        cards.pack(fill="x", pady=(0, 6))
-        self.g_ram = RingGauge(cards, "RAM")
-        self.g_ram.pack(side="left", padx=10)
-        self.g_cpu = RingGauge(cards, "CPU")
-        self.g_cpu.pack(side="left", padx=10)
-        self.g_disk = RingGauge(cards, "Disk")
-        self.g_disk.pack(side="left", padx=10)
+                                     corner_radius=8, text_color="#ffffff",
+                                     font=(FONT, 12, "bold"))
 
-        ctk.CTkLabel(page, text="Quick actions", font=(FONT, 14, "bold"),
-                     anchor="w").pack(anchor="w", pady=(10, 6))
-        row = ctk.CTkFrame(page, fg_color="transparent")
-        row.pack(fill="x")
+        # Executive status panel: one visual anchor, one main action.
+        hero = ctk.CTkFrame(page, fg_color=C_CARD, corner_radius=14,
+                            border_width=1, border_color=C_LINE)
+        hero.grid(row=1, column=0, columnspan=5, sticky="ew", pady=(0, 12))
+        hero.grid_columnconfigure(0, weight=1)
+        hero.grid_columnconfigure(1, weight=0)
+        hero_left = ctk.CTkFrame(hero, fg_color="transparent")
+        hero_left.grid(row=0, column=0, sticky="nsew", padx=(22, 12),
+                       pady=9)
+        ctk.CTkLabel(hero_left, text="SYSTEM OVERVIEW",
+                     font=(FONT, 9, "bold"), text_color=C_ACC,
+                     anchor="w").pack(anchor="w")
+        ctk.CTkLabel(hero_left, text="Your PC, at a glance",
+                     font=(FONT, 23, "bold"), anchor="w").pack(
+                         anchor="w", pady=(5, 2))
+        ctk.CTkLabel(hero_left,
+                     text="Monitor resource use, review system health, and choose a safe next step.",
+                     font=(FONT, 12), text_color=C_MUT, anchor="w",
+                     wraplength=600, justify="left").pack(anchor="w")
+        self.dash_msg = ctk.CTkLabel(hero_left, text="",
+                                     text_color=C_MUT, font=(FONT, 11),
+                                     anchor="w", wraplength=600,
+                                     justify="left")
+        self.dash_msg.pack(anchor="w", pady=(8, 0))
 
-        c1 = ctk.CTkFrame(row, fg_color=C_CARD, corner_radius=12,
-                           border_width=1, border_color=C_LINE)
-        c1.pack(side="left", fill="both", expand=True, padx=(0, 8))
-        ctk.CTkLabel(c1, text="Emergency RAM release",
-                     font=(FONT, 14, "bold"), anchor="w").pack(anchor="w", padx=16, pady=(14, 2))
-        ctk.CTkLabel(c1, text="Finds your heaviest RAM-hungry apps, lets you "
-                              "tick the ones to close, then frees RAM.",
-                     font=(FONT, 12), text_color=C_MUT, wraplength=380,
-                     justify="left", anchor="w").pack(anchor="w", padx=16, pady=(0, 10))
-        self.emergency_btn = ctk.CTkButton(c1, text="Free RAM now", fg_color="#c53030", text_color=C_ONCOLOR,
-                                           hover_color="#a52626",
-                                           command=self._emergency)
-        self.emergency_btn.pack(anchor="w", padx=16, pady=(0, 16))
-
-        c2 = ctk.CTkFrame(row, fg_color=C_CARD, corner_radius=12,
-                           border_width=1, border_color=C_LINE)
-        c2.pack(side="left", fill="both", expand=True, padx=(8, 0))
-        ctk.CTkLabel(c2, text="Light RAM clean",
-                     font=(FONT, 14, "bold"), anchor="w").pack(anchor="w", padx=16, pady=(14, 2))
-        ctk.CTkLabel(c2, text="Flushes RAM standby cache without closing any "
-                              "app. Completely safe.",
-                     font=(FONT, 12), text_color=C_MUT, wraplength=380,
-                     justify="left", anchor="w").pack(anchor="w", padx=16, pady=(0, 10))
-        self.light_btn = ctk.CTkButton(c2, text="Light clean", fg_color="#0e9f6e", text_color=C_ONCOLOR,
-                                       hover_color="#0b7f57",
-                                       command=self._light)
-        self.light_btn.pack(anchor="w", padx=16, pady=(0, 16))
-
-        # Health Score + Optimize in 1 Click (v2.4)
-        hrow = ctk.CTkFrame(page, fg_color="transparent")
-        hrow.pack(fill="x", pady=(10, 0))
-
-        h1 = ctk.CTkFrame(hrow, fg_color=C_CARD, corner_radius=12,
-                           border_width=1, border_color=C_LINE)
-        h1.pack(side="left", fill="both", expand=True, padx=(0, 8))
-        # Phase 3 #health: layout = ring (left) + score text + breakdown
-        # (right). The ring gives an at-a-glance green/yellow/red signal
-        # the old "22pt number" alone didn't.
-        h_top = ctk.CTkFrame(h1, fg_color="transparent")
-        h_top.pack(fill="x", padx=16, pady=(14, 2))
-        ctk.CTkLabel(h_top, text="Health Score",
-                     font=(FONT, 14, "bold"), anchor="w").pack(anchor="w")
-        h_visual = ctk.CTkFrame(h1, fg_color="transparent")
-        h_visual.pack(fill="x", padx=8)
-        self.health_ring = HealthRing(h_visual, size=120)
-        self.health_ring.pack(side="left", padx=(8, 12), pady=(0, 4))
-        h_text = ctk.CTkFrame(h_visual, fg_color="transparent")
-        h_text.pack(side="left", fill="x", expand=True)
-        self.health_score_lbl = ctk.CTkLabel(h_text, text="-- / 100",
-                                             font=(FONT, 22, "bold"),
-                                             text_color=C_ACC, anchor="w")
-        self.health_score_lbl.pack(anchor="w")
-        self.health_break_lbl = ctk.CTkLabel(h_text,
-                                             text="Press Refresh to calculate.",
-                                             font=(FONT, 11),
-                                             text_color=C_MUT,
-                                             wraplength=380,
-                                             justify="left", anchor="w")
-        self.health_break_lbl.pack(anchor="w", pady=(4, 6))
-        self.health_suggest_lbl = ctk.CTkLabel(h_text, text="", font=(FONT, 11),
-                                               text_color=C_TXT, wraplength=380,
-                                               justify="left", anchor="w")
-        self.health_suggest_lbl.pack(anchor="w", pady=(0, 8))
-        self.health_refresh_btn = ctk.CTkButton(h1, text="Refresh Health Score",
-                                                fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
-                                                command=self._refresh_health)
-        self.health_refresh_btn.pack(anchor="w", padx=16, pady=(0, 16))
-
-        h2 = ctk.CTkFrame(hrow, fg_color=C_CARD, corner_radius=12,
-                           border_width=1, border_color=C_LINE)
-        h2.pack(side="left", fill="both", expand=True, padx=(8, 0))
-        ctk.CTkLabel(h2, text="Optimize in 1 Click",
-                     font=(FONT, 14, "bold"), anchor="w").pack(anchor="w", padx=16, pady=(14, 2))
-        ctk.CTkLabel(h2, text="Light RAM clean + level-1 junk to quarantine + "
-                              "Quick Refresh. Kills nothing, deletes nothing "
-                              "permanently.",
-                     font=(FONT, 12), text_color=C_MUT, wraplength=380,
-                     justify="left", anchor="w").pack(anchor="w", padx=16, pady=(0, 10))
-        self.optimize_btn = ctk.CTkButton(h2, corner_radius=10, text="Optimize Now", fg_color="#0e9f6e", text_color=C_ONCOLOR,
-                                          hover_color="#0b7f57",
-                                          command=self._optimize)
-        self.optimize_btn.pack(anchor="w", padx=16, pady=(0, 8))
-        self.opt_prog = ctk.CTkProgressBar(h2, width=280, height=12)
-        self.opt_prog.pack(anchor="w", padx=16, pady=(0, 6))
+        hero_action = ctk.CTkFrame(hero, fg_color=C_CARD2, corner_radius=11)
+        hero_action.grid(row=0, column=1, sticky="ns", padx=(8, 18),
+                         pady=6)
+        ctk.CTkLabel(hero_action, text="QUICK OPTIMIZATION",
+                     font=(FONT, 9, "bold"), text_color=C_MUT).pack(
+                         anchor="w", padx=13, pady=(5, 1))
+        ctk.CTkLabel(hero_action,
+                     text="Level 1 cleanup · quarantine only",
+                     font=(FONT, 10), text_color=C_TXT,
+                     justify="left").pack(anchor="w", padx=13, pady=(0, 5))
+        self.optimize_btn = ctk.CTkButton(
+            hero_action, text="Optimize this PC", height=28,
+            fg_color=C_ACC_BTN, hover_color=C_ACC_BTN_HOV,
+            text_color=C_ONCOLOR, font=(FONT, 11, "bold"),
+            corner_radius=8, command=self._optimize)
+        self.optimize_btn.pack(fill="x", padx=12, pady=(0, 8))
+        self.opt_prog = ctk.CTkProgressBar(hero_action, height=4)
+        self.opt_prog.pack(fill="x", padx=13, pady=(0, 2))
         self.opt_prog.set(0)
-        self.opt_msg = ctk.CTkLabel(h2, text="", font=(FONT, 11),
-                                    text_color=C_MUT, wraplength=380,
-                                    justify="left", anchor="w")
-        self.opt_msg.pack(anchor="w", padx=16, pady=(0, 16))
+        self.opt_msg = ctk.CTkLabel(hero_action, text="Ready when you are",
+                                    font=(FONT, 9), text_color=C_MUT,
+                                    wraplength=240, justify="left")
+        self.opt_msg.pack(anchor="w", padx=13, pady=(0, 4))
 
-        # Top 10 processes by RAM / CPU (v2.7.0)
-        trow = ctk.CTkFrame(page, fg_color="transparent")
-        trow.pack(fill="x", pady=(14, 6))
-        ctk.CTkLabel(trow, text="Top 10 processes", font=(FONT, 14, "bold"),
+        # Resource telemetry strip. Rings are intentionally subordinate
+        # to the hero and have equal widths for fast scanning.
+        metric_specs = (("RAM", "g_ram"), ("CPU", "g_cpu"),
+                        ("Disk", "g_disk"))
+        for col, (label, attr) in enumerate(metric_specs):
+            card = ctk.CTkFrame(page, fg_color=C_CARD, corner_radius=12,
+                                border_width=1, border_color=C_LINE)
+            card.grid(row=2, column=col, sticky="nsew", padx=(0, 8),
+                      pady=(0, 12))
+            ctk.CTkLabel(card, text=label.upper(), font=(FONT, 9, "bold"),
+                         text_color=C_MUT).pack(anchor="w", padx=13,
+                                                pady=(10, 0))
+            gauge = RingGauge(card, label, size=94)
+            gauge.pack(anchor="center", padx=4, pady=(0, 3))
+            setattr(self, attr, gauge)
+
+        # Health panel shares the strip, but gets extra width and emphasis.
+        health = ctk.CTkFrame(page, fg_color=C_CARD, corner_radius=12,
+                              border_width=1, border_color=C_LINE)
+        health.grid(row=2, column=3, columnspan=2, sticky="nsew",
+                    padx=(0, 0), pady=(0, 12))
+        health.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(health, text="HEALTH SCORE", font=(FONT, 9, "bold"),
+                     text_color=C_MUT).grid(row=0, column=0, columnspan=2,
+                                            sticky="w", padx=16, pady=(11, 0))
+        self.health_ring = HealthRing(health, size=82)
+        self.health_ring.grid(row=1, column=0, rowspan=3, padx=(8, 2),
+                              pady=(1, 5))
+        self.health_score_lbl = ctk.CTkLabel(
+            health, text="-- / 100", font=(FONT, 21, "bold"),
+            text_color=C_ACC, anchor="w")
+        self.health_score_lbl.grid(row=1, column=1, sticky="sw",
+                                   padx=(2, 12), pady=(7, 0))
+        self.health_break_lbl = ctk.CTkLabel(
+            health, text="Refresh to check system health.", font=(FONT, 10),
+            text_color=C_MUT, anchor="w", wraplength=280, justify="left")
+        self.health_break_lbl.grid(row=2, column=1, sticky="nw",
+                                   padx=(2, 12), pady=(2, 0))
+        self.health_suggest_lbl = ctk.CTkLabel(
+            health, text="", font=(FONT, 10), text_color=C_TXT,
+            anchor="w", wraplength=280, justify="left")
+        self.health_suggest_lbl.grid(row=3, column=1, sticky="nw",
+                                     padx=(2, 12), pady=(1, 0))
+        self.health_refresh_btn = ctk.CTkButton(
+            health, text="Refresh score", height=28, width=118,
+            fg_color=C_BTN2, text_color=C_BTN2_TXT,
+            hover_color=C_BTN2_HOV, font=(FONT, 10, "bold"),
+            corner_radius=7, command=self._refresh_health)
+        self.health_refresh_btn.grid(row=4, column=1, sticky="w",
+                                     padx=(2, 12), pady=(2, 9))
+
+        # Action shelf: safe routine clean and explicit RAM recovery.
+        ctk.CTkLabel(page, text="RECOMMENDED ACTIONS",
+                     font=(FONT, 9, "bold"), text_color=C_MUT,
+                     anchor="w").grid(row=3, column=0, columnspan=5,
+                                      sticky="w", pady=(2, 6))
+        action_shelf = ctk.CTkFrame(page, fg_color="transparent")
+        action_shelf.grid(row=4, column=0, columnspan=5, sticky="ew",
+                          pady=(0, 8))
+        action_shelf.grid_columnconfigure((0, 1), weight=1, uniform="actions")
+        c1 = ctk.CTkFrame(action_shelf, fg_color=C_CARD, corner_radius=12,
+                          border_width=1, border_color=C_LINE)
+        c1.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        ctk.CTkLabel(c1, text="Recover memory", font=(FONT, 13, "bold"),
+                     anchor="w").pack(anchor="w", padx=16, pady=(13, 3))
+        ctk.CTkLabel(c1, text="Review memory-heavy apps before closing any process.",
+                     font=(FONT, 10), text_color=C_MUT, anchor="w",
+                     wraplength=410, justify="left").pack(anchor="w", padx=16)
+        self.emergency_btn = ctk.CTkButton(
+            c1, text="Review apps", height=32, fg_color="#c53030",
+            text_color=C_ONCOLOR, hover_color="#a52626",
+            font=(FONT, 10, "bold"), corner_radius=7,
+            command=self._emergency)
+        self.emergency_btn.pack(anchor="w", padx=16, pady=(7, 9))
+
+        c2 = ctk.CTkFrame(action_shelf, fg_color=C_CARD, corner_radius=12,
+                          border_width=1, border_color=C_LINE)
+        c2.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        ctk.CTkLabel(c2, text="Light memory cleanup", font=(FONT, 13, "bold"),
+                     anchor="w").pack(anchor="w", padx=16, pady=(13, 3))
+        ctk.CTkLabel(c2, text="Clear standby cache without closing your apps.",
+                     font=(FONT, 10), text_color=C_MUT, anchor="w",
+                     wraplength=410, justify="left").pack(anchor="w", padx=16)
+        self.light_btn = ctk.CTkButton(
+            c2, text="Clean memory", height=32, fg_color="#0e9f6e",
+            text_color=C_ONCOLOR, hover_color="#0b7f57",
+            font=(FONT, 10, "bold"), corner_radius=7, command=self._light)
+        self.light_btn.pack(anchor="w", padx=16, pady=(7, 9))
+
+        # Process snapshot is a single, legible work area rather than two
+        # equal-height text boxes competing with the system summary.
+        process_head = ctk.CTkFrame(page, fg_color="transparent")
+        process_head.grid(row=5, column=0, columnspan=5, sticky="ew",
+                          pady=(0, 5))
+        ctk.CTkLabel(process_head, text="RESOURCE-HEAVY PROCESSES",
+                     font=(FONT, 9, "bold"), text_color=C_MUT,
                      anchor="w").pack(side="left")
+        ctk.CTkLabel(process_head, text="Sorted snapshots · RAM and CPU",
+                     font=(FONT, 9), text_color=C_MUT,
+                     anchor="w").pack(side="left", padx=(10, 0))
         self.top_refresh_btn = ctk.CTkButton(
-            trow, text="Refresh", width=90, height=28,
-            fg_color=C_BTN2, text_color=C_BTN2_TXT, hover_color=C_BTN2_HOV,
-            command=self._refresh_top)
-        self.top_refresh_btn.pack(side="left", padx=(10, 0))
-        ctk.CTkLabel(trow, text="Auto-refreshes while you stay on this page. "
-                                "To close an app: Processes tab -> select -> End task.",
-                     font=(FONT, 11), text_color=C_MUT, anchor="w").pack(side="left", padx=(10, 0))
+            process_head, text="Refresh", width=78, height=27,
+            fg_color=C_BTN2, text_color=C_BTN2_TXT,
+            hover_color=C_BTN2_HOV, font=(FONT, 9, "bold"),
+            corner_radius=7, command=self._refresh_top)
+        self.top_refresh_btn.pack(side="right")
 
-        tcols = ctk.CTkFrame(page, fg_color="transparent")
-        tcols.pack(fill="x")
-        t1 = ctk.CTkFrame(tcols, fg_color=C_CARD, corner_radius=12,
-                           border_width=1, border_color=C_LINE)
-        t1.pack(side="left", fill="both", expand=True, padx=(0, 8))
-        ctk.CTkLabel(t1, text="Top 10 by RAM", font=(FONT, 12, "bold"),
-                     anchor="w").pack(anchor="w", padx=12, pady=(10, 4))
-        self.top_ram_box = ctk.CTkTextbox(t1, height=168, font=(FONT, 11),
-                                          fg_color="transparent")
-        self.top_ram_box.pack(fill="both", expand=True, padx=8, pady=(0, 10))
+        tables = ctk.CTkFrame(page, fg_color="transparent")
+        tables.grid(row=6, column=0, columnspan=5, sticky="nsew")
+        tables.grid_columnconfigure((0, 1), weight=1, uniform="tables")
+        t1 = ctk.CTkFrame(tables, fg_color=C_CARD, corner_radius=11,
+                          border_width=1, border_color=C_LINE)
+        t1.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        ctk.CTkLabel(t1, text="BY MEMORY", font=(FONT, 9, "bold"),
+                     text_color=C_MUT, anchor="w").pack(
+                         anchor="w", padx=12, pady=(9, 2))
+        self.top_ram_box = ctk.CTkTextbox(t1, height=118, font=(MONO, 10),
+                                          fg_color="transparent",
+                                          border_width=0, corner_radius=0)
+        self.top_ram_box.pack(fill="both", expand=True, padx=8, pady=(0, 7))
         self.top_ram_box.insert("1.0", "Loading...")
         self.top_ram_box.configure(state="disabled")
-        t2 = ctk.CTkFrame(tcols, fg_color=C_CARD, corner_radius=12,
-                           border_width=1, border_color=C_LINE)
-        t2.pack(side="left", fill="both", expand=True, padx=(8, 0))
-        ctk.CTkLabel(t2, text="Top 10 by CPU", font=(FONT, 12, "bold"),
-                     anchor="w").pack(anchor="w", padx=12, pady=(10, 4))
-        self.top_cpu_box = ctk.CTkTextbox(t2, height=168, font=(FONT, 11),
-                                          fg_color="transparent")
-        self.top_cpu_box.pack(fill="both", expand=True, padx=8, pady=(0, 10))
+        t2 = ctk.CTkFrame(tables, fg_color=C_CARD, corner_radius=11,
+                          border_width=1, border_color=C_LINE)
+        t2.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        ctk.CTkLabel(t2, text="BY CPU", font=(FONT, 9, "bold"),
+                     text_color=C_MUT, anchor="w").pack(
+                         anchor="w", padx=12, pady=(9, 2))
+        self.top_cpu_box = ctk.CTkTextbox(t2, height=118, font=(MONO, 10),
+                                          fg_color="transparent",
+                                          border_width=0, corner_radius=0)
+        self.top_cpu_box.pack(fill="both", expand=True, padx=8, pady=(0, 7))
         self.top_cpu_box.insert("1.0", "Loading...")
         self.top_cpu_box.configure(state="disabled")
-
-        self.dash_msg = ctk.CTkLabel(page, text="", text_color=C_MUT,
-                                     font=(FONT, 12), wraplength=900,
-                                     justify="left", anchor="w")
-        self.dash_msg.pack(anchor="w", pady=(10, 0))
 
     def _tick_dashboard(self):
         # Bug #3 fix: the old code called system_info.cpu_percent() (which
@@ -1884,9 +2071,10 @@ class App(ctk.CTk):
                     warns.append(f"Disk only {100-disk['percent']:.0f}% free — clean junk files!")
                 if warns:
                     self.d_banner.configure(text="WARNING: " + "  |  ".join(warns))
-                    self.d_banner.pack(fill="x", pady=(0, 8), before=self.g_ram.master)
+                    self.d_banner.grid(row=0, column=0, columnspan=5,
+                                       sticky="ew", pady=(0, 12))
                 else:
-                    self.d_banner.pack_forget()
+                    self.d_banner.grid_forget()
             except Exception:  # noqa: BLE001
                 pass
             # v2.7.0: refresh the Top-10 panel every ~20s while Overview is
